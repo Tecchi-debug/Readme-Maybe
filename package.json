@@ -1,4 +1,13 @@
 {
   "name": "Readme-Maybe",
-  "packageManager": "yarn@4.9.1"
+  "private": true,
+  "packageManager": "yarn@4.9.1",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "build": "yarn workspace frontend build",
+    "dev": "yarn workspace frontend dev"
+  }
 }
