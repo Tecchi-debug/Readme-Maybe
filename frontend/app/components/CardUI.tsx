@@ -1,16 +1,22 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 function CardUI() {
-  let _ud: any = localStorage.getItem("user_data");
-  let ud = JSON.parse(_ud);
-  let userId: string = ud.id;
+  const [userId, setUserId] = useState("");
   const [message, setMessage] = useState("");
   const [searchResults, setResults] = useState("");
   const [cardList, setCardList] = useState("");
   const [search, setSearchValue] = React.useState("");
   const [card, setCardNameValue] = React.useState("");
+
+  useEffect(() => {
+    const _ud = localStorage.getItem("user_data");
+    if (_ud) {
+      const ud = JSON.parse(_ud);
+      setUserId(ud.id);
+    }
+  }, []);
 
   async function addCard(e: any): Promise<void> {
     e.preventDefault();
