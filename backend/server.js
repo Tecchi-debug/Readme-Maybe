@@ -1,18 +1,59 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const MongoClient = require('mongodb').MongoClient;
+let client;
+const hardcodedMongoUri = 'mongodb://127.0.0.1:27017/COP4331Cards';
 
-require('dotenv').config();
-const url = process.env.MONGODB_URI;
+async function getSecret()
+{
+    const secretName = 'your-secret-name';
+    const regionName = 'your-region';
 
-const client = new MongoClient(url);
-client.connect();
+    const secretsClient = new SecretsManagerClient({ region: regionName });
+    const response = await secretsClient.send(
+        new GetSecretValueCommand({ SecretId: secretName })
+    );
+
+    const secretString = response.SecretString;
+    return JSON.parse(secretString);
+}
+
+async function initializeDatabase()
+{
+    let url = '';
+
+    try
+    {
+        const secret = await getSecret();
+        url = secret.MONGODB_URI;
+    }
+    catch (error)
+    {
+        if (error && error.name === 'CredentialsProviderError')
+        {
+            console.warn('AWS credentials not found, using hardcoded Mongo URI for local run.');
+            url = hardcodedMongoUri;
+        }
+        else
+        {
+            throw error;
+        }
+    }
+
+    if (!url)
+    {
+        throw new Error('Secret must contain MONGODB_URI');
+    }
+
+    client = new MongoClient(url);
+    await client.connect();
+}
 
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,7 +67,15 @@ app.use((req, res, next) => {
     );
     next();
 });
-app.listen(5000); // start Node + Express server on port 5000
+
+initializeDatabase()
+    .then(() => {
+        app.listen(5000); // start Node + Express server on port 5000
+    })
+    .catch((error) => {
+        console.error('Failed to initialize server:', error);
+        process.exit(1);
+    });
 
 var cardList =
     [

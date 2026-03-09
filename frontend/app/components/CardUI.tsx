@@ -18,15 +18,6 @@ function CardUI() {
     }
   }, []);
 
-  const app_name = "13.59.10.35";
-  function buildPath(route: string): string {
-    if (process.env.NODE_ENV != "development") {
-      return "http://" + app_name + ":5000/" + route;
-    } else {
-      return "http://localhost:5000/" + route;
-    }
-  }
-
   async function addCard(e: any): Promise<void> {
     e.preventDefault();
 
@@ -34,7 +25,7 @@ function CardUI() {
     let js = JSON.stringify(obj);
 
     try {
-      const response = await fetch(buildPath("api/addCard"), {
+      const response = await fetch("http://13.59.10.35:5000/api/addcard", {
         method: "POST",
         body: js,
         headers: { "Content-Type": "application/json" },
@@ -60,7 +51,7 @@ function CardUI() {
     let js = JSON.stringify(obj);
 
     try {
-      const response = await fetch(buildPath("api/searchCards"), {
+      const response = await fetch("http://13.59.10.35:5000/api/searchcards", {
         method: "POST",
         body: js,
         headers: { "Content-Type": "application/json" },

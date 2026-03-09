@@ -7,15 +7,6 @@ function Login() {
   const [loginName, setLoginName] = React.useState("");
   const [loginPassword, setPassword] = React.useState("");
 
-  const app_name = "13.59.10.35";
-  function buildPath(route: string): string {
-    if (process.env.NODE_ENV != "development") {
-      return "http://" + app_name + ":5000/" + route;
-    } else {
-      return "http://localhost:5000/" + route;
-    }
-  }
-
   function handleSetLoginName(e: any): void {
     setLoginName(e.target.value);
   }
