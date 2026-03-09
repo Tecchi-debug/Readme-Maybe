@@ -6,6 +6,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const MongoClient = require('mongodb').MongoClient;
+
+require('dotenv').config();
+const url = process.env.MONGODB_URI;
+
+const client = new MongoClient(url);
+client.connect();
+
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader(
