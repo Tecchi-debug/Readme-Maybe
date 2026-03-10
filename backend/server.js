@@ -7,6 +7,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const MongoClient = require('mongodb').MongoClient;
+let client;
 
 async function getMongoUri() {
   const client = new SecretsManagerClient({ region: "us-east-2" });
@@ -17,19 +19,6 @@ async function getMongoUri() {
 
 const hardcodedMongoUri = process.env.MONGODB_URI;
 
-async function getSecret()
-{
-    const secretName = 'your-secret-name';
-    const regionName = 'your-region';
-
-    const secretsClient = new SecretsManagerClient({ region: regionName });
-    const response = await secretsClient.send(
-        new GetSecretValueCommand({ SecretId: secretName })
-    );
-
-    const secretString = response.SecretString;
-    return JSON.parse(secretString);
-}
 
 async function initializeDatabase()
 {
@@ -37,8 +26,7 @@ async function initializeDatabase()
 
     try
     {
-        const secret = await getSecret();
-        url = secret.MONGODB_URI;
+        url = await getMongoUri();
     }
     catch (error)
     {
