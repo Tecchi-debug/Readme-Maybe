@@ -218,8 +218,8 @@ app.post('/api/login', async (req, res, next) => {
     const results = await db.collection('Users').find({ Login: login, Password: password }).toArray();
 
     var id = -1;
-    var fn = '';
-    var ln = '';
+    var fn = 'Empty';
+    var ln = 'Too';
 
     if (results.length > 0) {
         id = results[0].UserID;
