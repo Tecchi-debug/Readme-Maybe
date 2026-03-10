@@ -192,7 +192,7 @@ app.post('/api/addcard', async (req, res, next) => {
     var error = '';
 
     try {
-        const db = client.db('COP4331Cards');
+        const db = client.db('main');
         const result = db.collection('Cards').insertOne(newCard);
     }
     catch (e) {
@@ -214,7 +214,7 @@ app.post('/api/login', async (req, res, next) => {
 
     const { login, password } = req.body;
 
-    const db = client.db('COP4331Cards');
+    const db = client.db('main');
     const results = await db.collection('Users').find({ Login: login, Password: password }).toArray();
 
     var id = -1;
@@ -243,7 +243,7 @@ app.post('/api/searchcards', async (req, res, next) => {
 
     var _search = search.trim();
 
-    const db = client.db('COP4331Cards');
+    const db = client.db('main');
     const results = await db.collection('Cards').find({ "Card": { $regex: _search + '.*', $options: 'i' } }).toArray();
 
     var _ret = [];
