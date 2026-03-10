@@ -25,7 +25,7 @@ function CardUI() {
     let js = JSON.stringify(obj);
 
     try {
-      const response = await fetch("http://13.59.10.35:5000/api/addcard", {
+      const response = await fetch("http://3.134.101.199:5000/api/addcard", {
         method: "POST",
         body: js,
         headers: { "Content-Type": "application/json" },
@@ -51,7 +51,7 @@ function CardUI() {
     let js = JSON.stringify(obj);
 
     try {
-      const response = await fetch("http://13.59.10.35:5000/api/searchcards", {
+      const response = await fetch("http://3.134.101.199:5000/api/searchcards", {
         method: "POST",
         body: js,
         headers: { "Content-Type": "application/json" },

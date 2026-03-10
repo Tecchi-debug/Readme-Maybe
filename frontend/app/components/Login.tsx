@@ -21,7 +21,7 @@ function Login() {
     var js = JSON.stringify(obj);
 
     try {
-      const response = await fetch("http://13.59.10.35:5000/api/login", {
+      const response = await fetch("http://3.134.101.199:5000/api/login", {
         method: "POST",
         body: js,
         headers: { "Content-Type": "application/json" },

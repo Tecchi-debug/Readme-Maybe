@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
@@ -6,9 +7,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const MongoClient = require('mongodb').MongoClient;
-let client;
-const hardcodedMongoUri = 'mongodb://127.0.0.1:27017/COP4331Cards';
+
+async function getMongoUri() {
+  const client = new SecretsManagerClient({ region: "us-east-2" });
+  const response = await client.send(new GetSecretValueCommand({ SecretId: "prod/readmemaybe/database" }));
+  const secrets = JSON.parse(response.SecretString);
+  return secrets.MONGODB_URI;
+}
+
+const hardcodedMongoUri = process.env.MONGODB_URI;
 
 async function getSecret()
 {
@@ -51,8 +58,15 @@ async function initializeDatabase()
         throw new Error('Secret must contain MONGODB_URI');
     }
 
-    client = new MongoClient(url);
+    const clientOptions = {
+        tls: true,
+        tlsAllowInvalidCertificates: false,
+        serverSelectionTimeoutMS: 5000,
+    };
+
+    client = new MongoClient(url, clientOptions);
     await client.connect();
+    console.log('Successfully connected to MongoDB!');
 }
 
 app.use((req, res, next) => {
