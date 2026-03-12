@@ -6,43 +6,38 @@ const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.set('trust proxy', 1);
 
 const MongoClient = require('mongodb').MongoClient;
 let client;
 
 async function getMongoUri() {
-  const client = new SecretsManagerClient({ region: "us-east-2" });
-  const response = await client.send(new GetSecretValueCommand({ SecretId: "prod/readmemaybe/database" }));
-  const secrets = JSON.parse(response.SecretString);
-  return secrets.MONGODB_URI;
+    const client = new SecretsManagerClient({ region: "us-east-2" });
+    const response = await client.send(new GetSecretValueCommand({ SecretId: "prod/readmemaybe/database" }));
+    const secrets = JSON.parse(response.SecretString);
+    return secrets.MONGODB_URI;
 }
 
 const hardcodedMongoUri = process.env.MONGODB_URI;
 
 
-async function initializeDatabase()
-{
+async function initializeDatabase() {
     let url = '';
 
-    try
-    {
+    try {
         url = await getMongoUri();
     }
-    catch (error)
-    {
-        if (error && error.name === 'CredentialsProviderError')
-        {
+    catch (error) {
+        if (error && error.name === 'CredentialsProviderError') {
             console.warn('AWS credentials not found, using hardcoded Mongo URI for local run.');
             url = hardcodedMongoUri;
         }
-        else
-        {
+        else {
             throw error;
         }
     }
 
-    if (!url)
-    {
+    if (!url) {
         throw new Error('Secret must contain MONGODB_URI');
     }
 
@@ -72,7 +67,11 @@ app.use((req, res, next) => {
 
 initializeDatabase()
     .then(() => {
-        app.listen(5000); // start Node + Express server on port 5000
+        // app.listen(5000); // start Node + Express server on port 5000
+
+        app.listen(5000, '127.0.0.1', () => {
+            console.log('API listening on 127.0.0.1:5000');
+        });
     })
     .catch((error) => {
         console.error('Failed to initialize server:', error);
