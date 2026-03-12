@@ -21,7 +21,7 @@ function Login() {
     var js = JSON.stringify(obj);
 
     try {
-      const response = await fetch("https://3.134.101.199:5000/api/login", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/login`, {
         method: "POST",
         body: js,
         headers: { "Content-Type": "application/json" },

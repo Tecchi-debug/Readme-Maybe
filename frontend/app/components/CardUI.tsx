@@ -25,7 +25,7 @@ function CardUI() {
     let js = JSON.stringify(obj);
 
     try {
-      const response = await fetch("https://3.134.101.199:5000/api/addcard", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/addcard`, {
         method: "POST",
         body: js,
         headers: { "Content-Type": "application/json" },
@@ -51,7 +51,7 @@ function CardUI() {
     let js = JSON.stringify(obj);
 
     try {
-      const response = await fetch("https://3.134.101.199:5000/api/searchcards", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/searchcards`, {
         method: "POST",
         body: js,
         headers: { "Content-Type": "application/json" },
