@@ -76,7 +76,7 @@ function Login() {
                     {/* logo */}
                     <div className="flex items-center gap-4">
                         <Image
-                            src="/assets/Icon.png"
+                            src="/assets/Icon.jpg"
                             alt="ReadMeMaybe logo"
                             width={44}
                             height={44}
