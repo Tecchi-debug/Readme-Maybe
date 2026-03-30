@@ -31,7 +31,7 @@ const register = async (req, res) => {
             hashedPassword
         });
 
-        // generate JWT 
+        // generate jwt token
         const jwtToken = jwt.sign({id: newUser._id}, process.env.JWT_SECRET, {expiresIn: '1h'});
 
         //return on success
