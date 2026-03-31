@@ -1,10 +1,10 @@
 import Dashboard from "../components/Dashboard";
 
-const DashboardUI = () => {
+const DashboardPage = () => {
   return (
     <>
       <Dashboard />
     </>
   );
 };
-export default DashboardUI;
+export default DashboardPage;
