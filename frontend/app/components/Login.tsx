@@ -290,7 +290,7 @@ function Login() {
                 />
               </div>
 
-              {/* Forgot password link — only shown on Sign In tab */}
+              {/* Forgot password link, only shown on Sign In tab */}
               {!isCreateAccount && (
                 <div className="-mt-1 text-right">
                   <button type="button" className="text-sm text-[#7F77DD] hover:text-[#AFA9EC]">
@@ -299,7 +299,7 @@ function Login() {
                 </div>
               )}
 
-              {/* Primary submit button — label changes based on active tab */}
+              {/* Primary submit button, label changes based on active tab */}
               <button
                 type="submit"
                 id="loginButton"
@@ -315,7 +315,7 @@ function Login() {
                 <div className="h-px flex-1 bg-[#252240]" />
               </div>
 
-              {/* OAuth buttons — not yet implemented */}
+              {/* OAuth buttons */}
               <button
                 type="button"
                 className="w-full rounded-xl border border-[#3A336F] bg-[#1B1935] px-4 py-3 text-lg font-mono transition hover:border-[#5A53BC]"
@@ -329,12 +329,6 @@ function Login() {
               >
                 Continue with Google
               </button>
-
-              {/* Switch tab prompt */}
-              <p className="pt-1 text-center text-sm text-[#7F77DD]">
-                Don&apos;t have an account?{" "}
-                <span className="text-[#AFA9EC]">Create one free</span>
-              </p>
 
               {/* Feedback message — shown when message state is non-empty */}
               {message && (

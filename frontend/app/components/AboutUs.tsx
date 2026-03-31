@@ -7,10 +7,10 @@ import { useEffect, useRef, useState } from "react";
 // Team data
 // -------------------------------------------------------------------------
 const team = [
-  { initials: "SA", name: "Santiage Aguilar", role: "Project Manager", sub: "Deployment", color: "#1d9e75", text: "#e1f5ee" },
+  { initials: "SA", name: "Santiago Aguilar", role: "Project Manager", sub: "Deployment", color: "#1d9e75", text: "#e1f5ee" },
   { initials: "RC", name: "Reyjay Collazo", role: "Project Manager", sub: "Wild Card", color: "#1d9e75", text: "#04342c" },
   { initials: "AS", name: "Aiden Sperr", role: "Frontend Developer", sub: "UI & Design", color: "#7f77dd", text: "#eeedfe" },
-  { initials: "NG", name: "Nicole Gonzales", role: "Mobile Developer", sub: "iOS & Android", color: "#1d9e75", text: "#e1f5ee" },
+  { initials: "NG", name: "Nicole Gonzalez", role: "Mobile Developer", sub: "iOS", color: "#1d9e75", text: "#e1f5ee" },
   { initials: "KD", name: "Kiara Delgado", role: "Auth Developer", sub: "Slides", color: "#afa9ec", text: "#26215c" },
   { initials: "SY", name: "Selin Yilmaz", role: "Database Engineer", sub: "AI Engineering", color: "#7f77dd", text: "#eeedfe" },
   { initials: "WS", name: "William Sharpe", role: "AI Engineer", sub: "Generation", color: "#1d9e75", text: "#e1f5ee" },

@@ -3,8 +3,7 @@
 import Link from "next/link";
 
 // -------------------------------------------------------------------------
-// Dashboard — main view after login
-// Layout: fixed 220px sidebar + flex-1 main content area
+// Main Dashboard UI
 // -------------------------------------------------------------------------
 
 export default function Dashboard() {
