@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 // -------------------------------------------------------------------------
-// Team data — swap placeholder names for real ones before shipping
+// Team data
 // -------------------------------------------------------------------------
 const team = [
   { initials: "SA", name: "Santiage Aguilar", role: "Project Manager", sub: "Deployment", color: "#1d9e75", text: "#e1f5ee" },
@@ -17,12 +17,10 @@ const team = [
 ];
 
 // -------------------------------------------------------------------------
-// AnimatedCard — wraps each team card with an IntersectionObserver so it
-// fades in and slides up when it enters the viewport. Each card receives a
-// staggered delay via the `index` prop so they cascade rather than all
-// appearing at once.
+// AnimatedTeammateCard: each team card gets an IntersectionObserver so it
+// fades in and slides up when the page loads
 // -------------------------------------------------------------------------
-function AnimatedCard({ member, index }: { member: typeof team[0]; index: number }) {
+function AnimatedTeammateCard({ member, index }: { member: typeof team[0]; index: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
 
@@ -33,7 +31,7 @@ function AnimatedCard({ member, index }: { member: typeof team[0]; index: number
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          // Stagger: each card waits an extra 100ms beyond the previous one
+          // Each card waits an extra 100ms pastd the previous one
           setTimeout(() => setVisible(true), index * 100);
           observer.disconnect();
         }
@@ -70,7 +68,7 @@ function AnimatedCard({ member, index }: { member: typeof team[0]; index: number
       {/* Role */}
       <p className="text-[#7f77dd] text-[12px] font-medium">{member.role}</p>
 
-      {/* Sub-role badge */}
+      {/* Secondary role badge */}
       <span
         className="text-[11px] font-medium px-3 py-1 rounded-full"
         style={{
@@ -86,20 +84,20 @@ function AnimatedCard({ member, index }: { member: typeof team[0]; index: number
 }
 
 // -------------------------------------------------------------------------
-// AboutUs — main page component
+// Main page UI
 // -------------------------------------------------------------------------
 export default function AboutUs() {
   return (
     <div className="flex h-screen w-full bg-[#13111e] font-mono overflow-hidden relative">
 
       {/* ----------------------------------------------------------------
-          Background Circles - same as Dashboard
+          Background Circles, same as Dashboard
       ---------------------------------------------------------------- */}
       {/* Top right circle */}
       <div className="pointer-events-none absolute -top-20 right-[-60px] w-[340px] h-[340px] rounded-full bg-[#1d9e75] opacity-[0.07]" />
 
       {/* ----------------------------------------------------------------
-          Sidebar - identical  to Dashboard
+          Sidebar items, same as Dashboard
       ---------------------------------------------------------------- */}
       <aside className="relative z-10 flex flex-col w-[220px] flex-shrink-0 bg-[#1c1a2e] border-r border-[#252240]">
 
@@ -181,7 +179,7 @@ export default function AboutUs() {
         {/* Team grid w/ animation */}
         <div className="grid grid-cols-4 gap-4">
           {team.map((member, i) => (
-            <AnimatedCard key={member.initials} member={member} index={i} />
+            <AnimatedTeammateCard key={member.initials} member={member} index={i} />
           ))}
         </div>
 
