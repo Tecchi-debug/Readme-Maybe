@@ -1,7 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const mongoose = require('mongoose');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+const PORT = process.env.PORT || 5000;
 
 const app = express();
 app.use(cors());
@@ -11,17 +13,50 @@ app.set('trust proxy', 1);
 const MongoClient = require('mongodb').MongoClient;
 let client;
 
-async function getMongoUri() {
-    const client = new SecretsManagerClient({ region: "us-east-2" });
-    const response = await client.send(new GetSecretValueCommand({ SecretId: "prod/readmemaybe/database" }));
-    const secrets = JSON.parse(response.SecretString);
-    return secrets.MONGODB_URI;
-}
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', authRoutes);
 
 const hardcodedMongoUri = process.env.MONGODB_URI;
 
+async function getMongoUri() {
+    try{
+        const client = new SecretsManagerClient({ region: "us-east-2" });
+        const response = await client.send(new GetSecretValueCommand({ SecretId: "prod/readmemaybe/database" }));
+        const secrets = JSON.parse(response.SecretString);
+        if (!secrets.MONGODB_URI) throw new Error('MONGODB_URI missing in Secrets');
+        return secrets.MONGODB_URI; 
+    }catch(err){
+        console.warn('Could not get AWS secret. Using hard coded MONGODB_URI');
+        return hardcodedMongoUri;
+    }
+}
 
-async function initializeDatabase() {
+async function initDatabase() {
+    const mongoUri = await getMongoUri();
+    mongoose.connect(mongoUri)
+    .then(() => console.log('MongoDB connected (Mongoose)'))
+    .catch(err => console.error(err));
+}
+
+initDatabase()
+    .then(() => {
+        app.listen(PORT, '127.0.0.1', () => {
+            console.log(`API listening on 127.0.0.1:${PORT}`);
+        });
+    })
+    .catch(err =>{
+        console.error('Failed to connect to MongoDB:', err);
+        process.exit(1);
+    })
+
+
+
+/*mongoose.connect(hardcodedMongoUri)
+  .then(() => console.log('MongoDB connected (Mongoose)'))
+  .catch(err => console.error(err));
+*/
+
+/*async function initializeDatabase() {
     let url = '';
 
     try {
@@ -51,7 +86,7 @@ async function initializeDatabase() {
     await client.connect();
     console.log('Successfully connected to MongoDB!');
 }
-
+*/
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader(
@@ -65,18 +100,6 @@ app.use((req, res, next) => {
     next();
 });
 
-initializeDatabase()
-    .then(() => {
-        // app.listen(5000); // start Node + Express server on port 5000
-
-        app.listen(5000, '127.0.0.1', () => {
-            console.log('API listening on 127.0.0.1:5000');
-        });
-    })
-    .catch((error) => {
-        console.error('Failed to initialize server:', error);
-        process.exit(1);
-    });
 
 var cardList =
     [
@@ -205,7 +228,7 @@ app.post('/api/addcard', async (req, res, next) => {
 });
 
 
-app.post('/api/login', async (req, res, next) => {
+/*app.post('/api/login', async (req, res, next) => {
     // incoming: login, password
     // outgoing: id, firstName, lastName, error
 
@@ -228,7 +251,7 @@ app.post('/api/login', async (req, res, next) => {
 
     var ret = { id: id, firstName: fn, lastName: ln, error: '' };
     res.status(200).json(ret);
-});
+});*/
 
 
 
