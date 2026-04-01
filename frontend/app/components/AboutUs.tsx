@@ -7,13 +7,13 @@ import { useEffect, useRef, useState } from "react";
 // Team data
 // -------------------------------------------------------------------------
 const team = [
-  { initials: "SA", name: "Santiago Aguilar", role: "Project Manager", sub: "Deployment", color: "#1d9e75", text: "#e1f5ee" },
-  { initials: "RC", name: "Reyjay Collazo", role: "Project Manager", sub: "Wild Card", color: "#1d9e75", text: "#04342c" },
-  { initials: "AS", name: "Aiden Sperr", role: "Frontend Developer", sub: "UI & Design", color: "#7f77dd", text: "#eeedfe" },
-  { initials: "NG", name: "Nicole Gonzalez", role: "Mobile Developer", sub: "iOS", color: "#1d9e75", text: "#e1f5ee" },
-  { initials: "KD", name: "Kiara Delgado", role: "Auth Developer", sub: "Slides", color: "#afa9ec", text: "#26215c" },
-  { initials: "SY", name: "Selin Yilmaz", role: "Database Engineer", sub: "AI Engineering", color: "#7f77dd", text: "#eeedfe" },
-  { initials: "WS", name: "William Sharpe", role: "AI Engineer", sub: "Generation", color: "#1d9e75", text: "#e1f5ee" },
+  { initials: "SA", name: "Santiago Aguilar", role: "Project Manager / Deployment", color: "#1d9e75", text: "#e1f5ee" },
+  { initials: "RC", name: "Reyjay Collazo", role: "Project Manager", color: "#1d9e75", text: "#04342c" },
+  { initials: "AS", name: "Aiden Sperr", role: "Frontend Developer", color: "#7f77dd", text: "#eeedfe" },
+  { initials: "NG", name: "Nicole Gonzalez", role: "Mobile Developer", color: "#1d9e75", text: "#e1f5ee" },
+  { initials: "KD", name: "Kiara Delgado", role: "Auth Developer / Slides", color: "#afa9ec", text: "#26215c" },
+  { initials: "SY", name: "Selin Yilmaz", role: "Database Engineer / AI", color: "#7f77dd", text: "#eeedfe" },
+  { initials: "WS", name: "William Sharpe", role: "AI Engineer", color: "#1d9e75", text: "#04342c" },
 ];
 
 // -------------------------------------------------------------------------
@@ -66,9 +66,6 @@ function AnimatedTeammateCard({ member, index }: { member: typeof team[0]; index
       <p className="text-[#eeedfe] text-[15px] font-medium leading-tight">{member.name}</p>
 
       {/* Role */}
-      <p className="text-[#7f77dd] text-[12px] font-medium">{member.role}</p>
-
-      {/* Secondary role badge */}
       <span
         className="text-[11px] font-medium px-3 py-1 rounded-full"
         style={{
@@ -77,7 +74,7 @@ function AnimatedTeammateCard({ member, index }: { member: typeof team[0]; index
           border: `0.5px solid ${member.color}55`,
         }}
       >
-        {member.sub}
+        {member.role}
       </span>
     </div>
   );
