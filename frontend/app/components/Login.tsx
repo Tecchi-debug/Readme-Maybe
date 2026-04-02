@@ -53,26 +53,24 @@ function Login() {
   async function doLogin(event: any): Promise<void> {
     event.preventDefault();
 
-    const obj = { login: loginName, password: loginPassword };
-    const js = JSON.stringify(obj);
-
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/login`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/login`, {
         method: "POST",
-        body: js,
+        body: JSON.stringify({ Email: loginName, Password: loginPassword }),
         headers: { "Content-Type": "application/json" },
       });
 
-      const res = JSON.parse(await response.text());
+      const res = await response.json();
 
-      if (res.id <= 0) {
-        setMessage("User/Password combination incorrect");
+      if (!response.ok) {
+        setMessage(res.message || "Login failed");
       } else {
-        // Store user info in localStorage so other pages can access it
+        // Store user info and JWT token in localStorage so other pages can access it
         const user = {
-          firstName: res.firstName,
-          lastName: res.lastName,
-          id: res.id,
+          firstName: res.user.FirstName,
+          lastName: res.user.LastName,
+          id: res.user._id,
+          token: res.jwtToken,
         };
         localStorage.setItem("user_data", JSON.stringify(user));
 
@@ -85,11 +83,41 @@ function Login() {
     }
   }
 
+  // Sends registration data to the backend and switches to sign-in tab on success
+  async function doRegister(event: any): Promise<void> {
+    event.preventDefault();
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/register`, {
+        method: "POST",
+        body: JSON.stringify({
+          FirstName: firstName,
+          LastName: lastName,
+          Login: loginName,
+          Email: loginName,
+          Password: loginPassword,
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const res = await response.json();
+
+      if (!response.ok) {
+        setMessage(res.message || "Registration failed");
+      } else {
+        setMessage("Account created! You can now sign in.");
+        setIsCreateAccount(false);
+      }
+    } catch (error: any) {
+      alert(error.toString());
+      return;
+    }
+  }
+
   // Routes form submission to the correct handler based on current tab
   async function handleAuthSubmit(event: any): Promise<void> {
     if (isCreateAccount) {
-      event.preventDefault();
-      setMessage("Not yet implemented.");
+      await doRegister(event);
       return;
     }
 
@@ -332,9 +360,9 @@ function Login() {
 
               {/* Feedback message — shown when message state is non-empty */}
               {message && (
-                <div className={`rounded-xl border px-4 py-3 text-sm ${message.includes("incorrect")
+                <div className={`rounded-xl border px-4 py-3 text-sm ${message.toLowerCase().includes("invalid") || message.toLowerCase().includes("incorrect") || message.toLowerCase().includes("failed") || message.toLowerCase().includes("in use")
                     ? "border-red-400/50 bg-red-500/10 text-red-200"
-                    : "border-[#7F77DD]/50 bg-[#7F77DD]/10"
+                    : "border-[#1D9E75]/50 bg-[#1D9E75]/10 text-green-200"
                   }`}>
                   <span id="loginResult">{message}</span>
                 </div>
