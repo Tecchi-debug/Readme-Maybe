@@ -1,5 +1,5 @@
 // This is the StoredRepo model, I don't think we have this in the backend yet
-const StoredRepo = require("../models/storedRepo.js");
+const StoredRepo = require("../models/StoredRepo.js");
 
 
 // Will find the StoredRepo in MongoDB, and compare that commit to the latest commit used to
