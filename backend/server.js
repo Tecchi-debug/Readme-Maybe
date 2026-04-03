@@ -1,9 +1,12 @@
 require('dotenv').config();
-const express = require('express');
+const express = require('express'); 
+const testRepoRoute = require('./routes/testRepoRoute');
+const analyzeUrlRoute = require('./routes/gitRoutes');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 const PORT = process.env.PORT || 5000;
+
 
 const app = express();
 app.use(cors());
@@ -278,4 +281,7 @@ app.post('/api/searchcards', async (req, res, next) => {
 });
 
 
+
+app.use('/',analyzeUrlRoute);
+app.use('/',testRepoRoute);
 
