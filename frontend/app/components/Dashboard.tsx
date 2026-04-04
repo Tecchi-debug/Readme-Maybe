@@ -12,6 +12,36 @@ export default function Dashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
 
+  async function refreshAccessToken(userData: any): Promise<string> {
+    const refreshToken = userData?.refreshToken || "";
+
+    if (!refreshToken || !process.env.NEXT_PUBLIC_API_URL) {
+      return "";
+    }
+
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data?.jwtToken || !data?.refreshToken) {
+      return "";
+    }
+
+    const updatedUserData = {
+      ...userData,
+      token: data.jwtToken,
+      refreshToken: data.refreshToken,
+    };
+
+    localStorage.setItem("user_data", JSON.stringify(updatedUserData));
+    return data.jwtToken;
+  }
+
   async function handleGenerateReadme(): Promise<void> {
     const trimmedRepoUrl = repoUrl.trim();
 
@@ -28,9 +58,10 @@ export default function Dashboard() {
 
     let userId = "";
     let token = "";
+    let userData: any = null;
 
     try {
-      const userData = JSON.parse(userDataRaw);
+      userData = JSON.parse(userDataRaw);
       userId = userData?.id || "";
       token = userData?.token || "";
     } catch {
@@ -52,19 +83,31 @@ export default function Dashboard() {
     setSubmitMessage("");
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          repoUrl: trimmedRepoUrl,
-          userId,
-        }),
-      });
+      const sendAnalyzeRequest = async (authToken: string) => (
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
+          body: JSON.stringify({
+            repoUrl: trimmedRepoUrl,
+            userId,
+          }),
+        })
+      );
 
-      const data = await response.json();
+      let response = await sendAnalyzeRequest(token);
+      let data = await response.json();
+
+      if (response.status === 401 && userData?.refreshToken) {
+        const nextAccessToken = await refreshAccessToken(userData);
+
+        if (nextAccessToken) {
+          response = await sendAnalyzeRequest(nextAccessToken);
+          data = await response.json();
+        }
+      }
 
       if (!response.ok) {
         setSubmitMessage(data?.error || "Failed to analyze repo.");

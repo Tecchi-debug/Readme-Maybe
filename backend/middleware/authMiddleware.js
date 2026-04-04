@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const JwtSession = require('../models/JwtSession');
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
     try{
         //get token
         const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -8,7 +9,22 @@ const authMiddleware = (req, res, next) => {
 
         //verify token
         const verToken = jwt.verify(token, process.env.JWT_SECRET);
-        console.log("Decoded: ", verToken);
+        if (verToken.type && verToken.type !== 'access') {
+            return res.status(401).json({message: 'Access token is required'});
+        }
+
+        if (verToken.jti) {
+            const session = await JwtSession.findOne({
+                UserId: verToken.id,
+                Jti: verToken.jti,
+                RevokedAt: null
+            });
+
+            if (!session || session.ExpiresAt <= new Date()) {
+                return res.status(401).json({message: 'Session is no longer valid'});
+            }
+        }
+
         req.user = verToken;
         next();
     } catch(err){

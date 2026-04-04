@@ -71,6 +71,7 @@ function Login() {
           lastName: res.user.LastName,
           id: res.user._id,
           token: res.jwtToken,
+          refreshToken: res.refreshToken,
         };
         localStorage.setItem("user_data", JSON.stringify(user));
 
