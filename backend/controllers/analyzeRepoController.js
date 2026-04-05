@@ -5,7 +5,6 @@ const analyzeRepoController = async(req,res) => {
 
         const { repoUrl } = req.body;
         const { userId } = req.body;
-        //console.log(req.body);
         const result = await analyzeUrl(repoUrl,userId);
         res.status(200).json(result);
     } catch(error){
