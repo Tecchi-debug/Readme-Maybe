@@ -110,6 +110,10 @@ const login = async (req, res) => {
             return res.status(400).json({message: 'Invalid Email'});
         }
 
+        if (returnUser.EmailVerified === false) {
+            return res.status(400).json({message: 'Please verify your email before logging in'});
+        }
+
         // compare the password
         const match = await bcrypt.compare(Password, returnUser.hashedPassword);
         if(!match){

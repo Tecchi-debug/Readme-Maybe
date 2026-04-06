@@ -5,6 +5,8 @@ const userSchema = new mongoose.Schema({
     LastName: { type: String, required: true, trim: true },
     Login: { type: String, required: true, unique: true, trim: true, lowercase: true },
     Email: { type: String, required: true, unique: true, trim: true, lowercase: true },
+    EmailVerified: { type: Boolean, default: true },
+    EmailVerifiedAt: { type: Date, default: null },
     hashedPassword: { type: String, required: true },
     Role: { type: String, enum: ['user', 'admin'], default: 'user' },
     Status: { type: String, enum: ['active', 'pending', 'disabled'], default: 'active' },
