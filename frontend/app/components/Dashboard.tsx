@@ -1,12 +1,130 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 // -------------------------------------------------------------------------
 // Main Dashboard UI
 // -------------------------------------------------------------------------
 
 export default function Dashboard() {
+  const [repoUrl, setRepoUrl] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState("");
+
+  async function refreshAccessToken(userData: any): Promise<string> {
+    const refreshToken = userData?.refreshToken || "";
+
+    if (!refreshToken || !process.env.NEXT_PUBLIC_API_URL) {
+      return "";
+    }
+
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data?.jwtToken || !data?.refreshToken) {
+      return "";
+    }
+
+    const updatedUserData = {
+      ...userData,
+      token: data.jwtToken,
+      refreshToken: data.refreshToken,
+    };
+
+    localStorage.setItem("user_data", JSON.stringify(updatedUserData));
+    return data.jwtToken;
+  }
+
+  async function handleGenerateReadme(): Promise<void> {
+    const trimmedRepoUrl = repoUrl.trim();
+
+    if (!trimmedRepoUrl) {
+      setSubmitMessage("Please enter a GitHub repo URL.");
+      return;
+    }
+
+    const userDataRaw = localStorage.getItem("user_data");
+    if (!userDataRaw) {
+      setSubmitMessage("Please sign in before submitting a repo.");
+      return;
+    }
+
+    let userId = "";
+    let token = "";
+    let userData: any = null;
+
+    try {
+      userData = JSON.parse(userDataRaw);
+      userId = userData?.id || "";
+      token = userData?.token || "";
+    } catch {
+      setSubmitMessage("Session data is invalid. Please sign in again.");
+      return;
+    }
+
+    if (!userId) {
+      setSubmitMessage("Missing user id. Please sign in again.");
+      return;
+    }
+
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setSubmitMessage("API URL is not configured.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitMessage("");
+
+    try {
+      const sendAnalyzeRequest = async (authToken: string) => (
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
+          body: JSON.stringify({
+            repoUrl: trimmedRepoUrl,
+            userId,
+          }),
+        })
+      );
+
+      let response = await sendAnalyzeRequest(token);
+      let data = await response.json();
+
+      if (response.status === 401 && userData?.refreshToken) {
+        const nextAccessToken = await refreshAccessToken(userData);
+
+        if (nextAccessToken) {
+          response = await sendAnalyzeRequest(nextAccessToken);
+          data = await response.json();
+        }
+      }
+
+      if (!response.ok) {
+        setSubmitMessage(data?.error || "Failed to analyze repo.");
+        return;
+      }
+
+      setSubmitMessage("Repo submitted successfully.");
+      setRepoUrl("");
+    } catch (error) {
+      setSubmitMessage(
+        error instanceof Error ? error.message : "Failed to analyze repo."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <div className="flex h-screen w-full bg-[#13111e] font-mono overflow-hidden relative">
       
@@ -130,12 +248,21 @@ export default function Dashboard() {
             <input
               type="text"
               placeholder="https://github.com/user/repo-name"
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.target.value)}
               className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] px-4 py-2.5 text-[#3c3489] text-[12px] placeholder:text-[#3c3489] outline-none w-[285px] focus:border-[#7f77dd] transition"
             />
-            <button className="bg-[#534ab7] text-[#eeedfe] text-[14px] font-medium px-6 py-2.5 rounded-[10px] hover:bg-[#6258c4] transition active:scale-[0.99]">
-              Generate README
+            <button
+              onClick={handleGenerateReadme}
+              disabled={isSubmitting}
+              className="bg-[#534ab7] text-[#eeedfe] text-[14px] font-medium px-6 py-2.5 rounded-[10px] hover:bg-[#6258c4] transition active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? "Generating..." : "Generate README"}
             </button>
           </div>
+          {submitMessage ? (
+            <p className="mt-2 text-[12px] text-[#afa9ec]">{submitMessage}</p>
+          ) : null}
         </div>
 
         {/* Recent activity */}
