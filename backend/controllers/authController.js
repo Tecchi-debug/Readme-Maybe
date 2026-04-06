@@ -62,16 +62,24 @@ const rotateSessionTokens = async (session) => {
 
 const register = async (req, res) => {
     try{
-        const{FirstName, LastName, Login, Email, Password} = req.body;
+        const{
+            FirstName = '',
+            LastName = '',
+            Login = '',
+            Email = '',
+            Password = ''
+        } = req.body;
+        const normalizedLogin = Login.trim().toLowerCase();
+        const normalizedEmail = Email.trim().toLowerCase();
 
         // check if the login is taken
-        const existingLogin = await User.findOne({Login});
+        const existingLogin = await User.findOne({Login: normalizedLogin});
         if (existingLogin){
             return res.status(400).json({message: 'Login already in use'});
         }
 
         // check if the email is taken
-        const existingEmail = await User.findOne({Email});
+        const existingEmail = await User.findOne({Email: normalizedEmail});
         if (existingEmail){
             return res.status(400).json({message: 'Email already in use'});
         }
@@ -82,10 +90,10 @@ const register = async (req, res) => {
 
         // create the user
         const newUser = await User.create({
-            FirstName,
-            LastName,
-            Login,
-            Email,
+            FirstName: FirstName.trim(),
+            LastName: LastName.trim(),
+            Login: normalizedLogin,
+            Email: normalizedEmail,
             hashedPassword
         });
 
@@ -102,10 +110,11 @@ const register = async (req, res) => {
 const login = async (req, res) => {
     try{
         // get email and password
-        const{Email, Password} = req.body;
+        const{Email = '', Password = ''} = req.body;
+        const normalizedEmail = Email.trim().toLowerCase();
 
         // find user by email
-        const returnUser = await User.findOne({Email});
+        const returnUser = await User.findOne({Email: normalizedEmail});
         if(!returnUser){
             return res.status(400).json({message: 'Invalid Email'});
         }
