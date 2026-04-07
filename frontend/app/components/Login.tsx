@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React, { useEffect, useState } from "react";
 
 function Login() {
 
@@ -14,6 +15,8 @@ function Login() {
 
   // Feedback message shown below the form (errors, info, etc.)
   const [message, setMessage] = useState("");
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   // First and last name fields
   const [firstName, setFirstName] = useState("");
@@ -86,6 +89,35 @@ function Login() {
     setMessage("");
     window.location.href = "/Dashboard";
   }
+
+  useEffect(() => {
+    const jwtToken = searchParams.get("jwtToken");
+    const refreshToken = searchParams.get("refreshToken");
+    const userId = searchParams.get("userId");
+    const firstNameFromQuery = searchParams.get("firstName");
+    const lastNameFromQuery = searchParams.get("lastName");
+    const authError = searchParams.get("error");
+
+    if (authError) {
+      setMessage(authError);
+      router.replace("/Login");
+      return;
+    }
+
+    if (!jwtToken || !refreshToken || !userId) {
+      return;
+    }
+
+    completeAuth({
+      jwtToken,
+      refreshToken,
+      user: {
+        _id: userId,
+        FirstName: firstNameFromQuery || "",
+        LastName: lastNameFromQuery || "",
+      },
+    });
+  }, [router, searchParams]);
 
   // Sends registration data to the backend and switches to sign-in tab on success
   async function doRegister(event: any): Promise<void> {
@@ -357,18 +389,21 @@ function Login() {
               {/* OAuth buttons */}
               <button
                 type="button"
+                onClick={() => {
+                  window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/api/auth/github`;
+                }}
                 className="w-full rounded-xl border border-[#3A336F] bg-[#1B1935] px-4 py-3 text-lg font-mono transition hover:border-[#5A53BC]"
               >
                 Continue with Github
               </button>
 
-              <button
+              {/* <button
                 type="button"
                 className="w-full rounded-xl border border-[#3A336F] bg-[#1B1935] px-4 py-3 text-lg font-mono transition hover:border-[#5A53BC]"
               >
                 Continue with Google
               </button>
-
+                */}
               {/* Feedback message — shown when message state is non-empty */}
               {message && (
                 <div className={`rounded-xl border px-4 py-3 text-sm ${isErrorMessage
