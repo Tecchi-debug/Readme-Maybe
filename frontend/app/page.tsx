@@ -1,5 +1,4 @@
 import LoginPage from "./Login/page";
-import CardPage from "./PageCard/page";
 
 export default function Home() {
   return (

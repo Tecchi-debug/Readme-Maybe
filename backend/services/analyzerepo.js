@@ -1,6 +1,7 @@
 // Take in a URL extract the needed parts for the GitHub API, call 5 APIS that will return us all the information needed for the LLM 
-const mongoose = require("mongoose");
-const storedRepo = require("../models/storedRepo");
+
+const { getGithubToken } = require('./secretsManager');
+
 
 const analyzeRepo = async (repoUrl, userId) => {
     if (!repoUrl) {
@@ -27,8 +28,9 @@ const analyzeRepo = async (repoUrl, userId) => {
         "X-GitHub-Api-Version": "2022-11-28",
     };
 
-    if (process.env.GITHUB_TOKEN) {
-        headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+    const githubToken = getGithubToken();
+    if (githubToken) {
+        headers.Authorization = `Bearer ${githubToken}`;
     }
 
     const repoMetaUrl = `https://api.github.com/repos/${owner}/${repo}`;
