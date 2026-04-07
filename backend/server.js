@@ -1,38 +1,53 @@
-require('dotenv').config();
 const express = require('express'); 
 const testRepoRoute = require('./routes/testRepoRoute');
 const analyzeUrlRoute = require('./routes/gitRoutes');
 const cors = require('cors');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
-const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
-const PORT = process.env.PORT || 5000;
+const { loadAwsSecrets, getMongoUri, getAppPort, getSecretsDebugInfo } = require('./services/secretsManager');
 
 
 const app = express();
+const startedAt = new Date();
 app.use(cors());
 app.use(express.json());
 app.set('trust proxy', 1);
+
+app.use((req, res, next) => {
+    const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+    req.requestId = requestId;
+    res.setHeader('X-Request-Id', requestId);
+    next();
+});
+
+app.use((req, res, next) => {
+    const started = Date.now();
+
+    res.on('finish', () => {
+        const durationMs = Date.now() - started;
+        const logEvent = {
+            level: 'info',
+            event: 'http_request',
+            requestId: req.requestId,
+            method: req.method,
+            path: req.originalUrl,
+            statusCode: res.statusCode,
+            durationMs,
+            ip: req.ip,
+            userAgent: req.get('user-agent') || '',
+        };
+
+        console.log(JSON.stringify(logEvent));
+    });
+
+    next();
+});
 
 const MongoClient = require('mongodb').MongoClient;
 let client;
 
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
-
-const hardcodedMongoUri = process.env.MONGODB_URI;
-
-async function getMongoUri() {
-    try{
-        const client = new SecretsManagerClient({ region: "us-east-2" });
-        const response = await client.send(new GetSecretValueCommand({ SecretId: "prod/readmemaybe/database" }));
-        const secrets = JSON.parse(response.SecretString);
-        if (!secrets.MONGODB_URI) throw new Error('MONGODB_URI missing in Secrets');
-        return secrets.MONGODB_URI; 
-    }catch(err){
-        console.warn('Could not get AWS secret. Using hard coded MONGODB_URI');
-        return hardcodedMongoUri;
-    }
-}
 
 async function initDatabase() {
     const mongoUri = await getMongoUri();
@@ -41,16 +56,17 @@ async function initDatabase() {
     .catch(err => console.error(err));
 }
 
-initDatabase()
-    .then(() => {
-        app.listen(PORT, '127.0.0.1', () => {
-            console.log(`API listening on 127.0.0.1:${PORT}`);
-        });
-    })
-    .catch(err =>{
-        console.error('Failed to connect to MongoDB:', err);
-        process.exit(1);
-    })
+mongoose.connection.on('connected', () => {
+    console.log(JSON.stringify({ level: 'info', event: 'mongo_connected' }));
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.warn(JSON.stringify({ level: 'warn', event: 'mongo_disconnected' }));
+});
+
+mongoose.connection.on('error', (error) => {
+    console.error(JSON.stringify({ level: 'error', event: 'mongo_error', message: error.message }));
+});
 
 
 
@@ -101,6 +117,27 @@ app.use((req, res, next) => {
         'GET, POST, PATCH, DELETE, OPTIONS'
     );
     next();
+});
+
+app.get('/healthz', (req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        uptimeSec: Math.floor(process.uptime()),
+        startedAt,
+        now: new Date(),
+    });
+});
+
+app.get('/readyz', (req, res) => {
+    const mongoReady = mongoose.connection.readyState === 1;
+    const secretsInfo = getSecretsDebugInfo();
+    const ready = mongoReady && secretsInfo.loaded;
+
+    res.status(ready ? 200 : 503).json({
+        ready,
+        mongoReady,
+        secretsLoaded: secretsInfo.loaded,
+    });
 });
 
 
@@ -157,4 +194,41 @@ app.post('/api/searchcards', async (req, res, next) => {
 
 app.use('/',analyzeUrlRoute);
 app.use('/',testRepoRoute);
+
+async function startServer() {
+    try {
+        await loadAwsSecrets();
+        await initDatabase();
+
+        const secretsInfo = getSecretsDebugInfo();
+        console.log(JSON.stringify({
+            level: 'info',
+            event: 'secrets_loaded',
+            secretId: secretsInfo.secretId,
+            region: secretsInfo.region,
+            loaded: secretsInfo.loaded,
+            keyCount: secretsInfo.keys.length,
+        }));
+
+        const port = getAppPort();
+        app.listen(port, '127.0.0.1', () => {
+            console.log(JSON.stringify({ level: 'info', event: 'server_started', host: '127.0.0.1', port }));
+        });
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'error', event: 'startup_failed', message: err.message }));
+        process.exit(1);
+    }
+}
+
+process.on('unhandledRejection', (reason) => {
+    const message = reason instanceof Error ? reason.message : String(reason);
+    console.error(JSON.stringify({ level: 'error', event: 'unhandled_rejection', message }));
+});
+
+process.on('uncaughtException', (error) => {
+    console.error(JSON.stringify({ level: 'error', event: 'uncaught_exception', message: error.message }));
+    process.exit(1);
+});
+
+startServer();
 
