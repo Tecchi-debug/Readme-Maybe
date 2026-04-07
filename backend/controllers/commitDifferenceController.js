@@ -4,7 +4,8 @@ const checkDifference = require("../services/commitDifference");
 const checkDifferenceController = async(req,res) => {
     try{
         const { repoUrl } = req.body;
-        const result = await checkDifference(repoUrl);
+        const { userId } = req.body;
+        const result = await checkDifference(repoUrl,userId);
         res.status(200).json(result);
     }catch(error){
         res.status(500).json({

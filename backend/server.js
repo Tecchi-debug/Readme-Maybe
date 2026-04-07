@@ -1,5 +1,4 @@
 const express = require('express'); 
-const testRepoRoute = require('./routes/testRepoRoute');
 const analyzeUrlRoute = require('./routes/gitRoutes');
 const cors = require('cors');
 const crypto = require('crypto');
@@ -156,7 +155,7 @@ app.post('/api/searchcards', async (req, res, next) => {
 
 
 app.use('/',analyzeUrlRoute);
-app.use('/',testRepoRoute);
+
 
 async function startServer() {
     try {
