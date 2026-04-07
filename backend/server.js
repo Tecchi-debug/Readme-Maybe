@@ -69,43 +69,6 @@ mongoose.connection.on('error', (error) => {
 });
 
 
-
-/*mongoose.connect(hardcodedMongoUri)
-  .then(() => console.log('MongoDB connected (Mongoose)'))
-  .catch(err => console.error(err));
-*/
-
-/*async function initializeDatabase() {
-    let url = '';
-
-    try {
-        url = await getMongoUri();
-    }
-    catch (error) {
-        if (error && error.name === 'CredentialsProviderError') {
-            console.warn('AWS credentials not found, using hardcoded Mongo URI for local run.');
-            url = hardcodedMongoUri;
-        }
-        else {
-            throw error;
-        }
-    }
-
-    if (!url) {
-        throw new Error('Secret must contain MONGODB_URI');
-    }
-
-    const clientOptions = {
-        tls: true,
-        tlsAllowInvalidCertificates: false,
-        serverSelectionTimeoutMS: 5000,
-    };
-
-    client = new MongoClient(url, clientOptions);
-    await client.connect();
-    console.log('Successfully connected to MongoDB!');
-}
-*/
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader(

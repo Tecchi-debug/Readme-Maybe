@@ -3,6 +3,7 @@ const JwtSession = require('../models/JwtSession');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const sendEmail = require('../utils/mailer');
 const { getJwtSecret } = require('../services/secretsManager');
 
 const ACCESS_TOKEN_TTL = '1h';
@@ -91,17 +92,35 @@ const register = async (req, res) => {
 
         // create the user
         const newUser = await User.create({
-            FirstName: FirstName.trim(),
-            LastName: LastName.trim(),
-            Login: normalizedLogin,
-            Email: normalizedEmail,
-            hashedPassword
+            FirstName,
+            LastName,
+            Login,
+            Email,
+            hashedPassword,
+            isVerified: false
         });
 
+        // generate email jwt token
+        const emailToken = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '1d'});
+
+        // email url
+        const url = `http://localhost:${process.env.PORT}/api/auth/verify/${emailToken}`;
+
+        // send verification email
+        await sendEmail(
+            newUser.Email,
+            'Verify your email for ReadMeMaybe',
+            `
+            <h2>Welcome to ReadMe-Maybe!</h2>
+            <p>Click below to verify your account:</p>
+            <a href="${url}">Verify Email</a>
+            `
+        );
+        
         const { accessToken, refreshToken } = await createSessionForUser(newUser._id.toString(), req);
 
         //return on success
-        res.status(201).json({jwtToken: accessToken, refreshToken, user: newUser});
+        res.status(201).json({jwtToken: accessToken, refreshToken, user: newUser, message:'User registered. Please check email to verify your account.'});
     }catch(error){
         console.error(error);
         res.status(500).json({message: 'Server Error'});
@@ -120,6 +139,7 @@ const login = async (req, res) => {
             return res.status(400).json({message: 'Invalid Email'});
         }
 
+        // check if user is verified, if not do not let them login
         if (returnUser.EmailVerified === false) {
             return res.status(400).json({message: 'Please verify your email before logging in'});
         }
@@ -212,6 +232,7 @@ const logout = async (req, res) => {
 
 const me = async(req, res) => {
     try{
+        // get the user
         const user = await User.findById(req.user.id).select('-hashedPassword');
         if (!user) return res.status(400).json({message:'User not found.'});
         res.status(200).json(user);
@@ -221,4 +242,34 @@ const me = async(req, res) => {
     }
 };
 
-module.exports = {register, login, refresh, logout, me};
+const verifyEmail = async (req, res) => {
+    try{
+        // get email jwt token
+        const { token } = req.params;
+
+        if(!token){
+            return res.status(400).send('Invalid verification link.');
+        }
+
+        // decode the token and get the user
+        const decode = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decode.id);
+
+        if(!user) return res.status(400).send('User not found.');
+
+        // check if user is verified, if not verify them
+        if(user.isVerified){
+            return res.send('Email is already verified');
+        }
+
+        user.isVerified = true;
+        await user.save();
+
+        res.send('Email was successfully verified! You may now login.');
+    } catch(err){
+        console.error(err);
+        res.status(400).send('Invalid verification link');
+    }
+};
+
+module.exports = {register, login, refresh, logout, me, verifyEmail};

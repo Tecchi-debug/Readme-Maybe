@@ -9,5 +9,6 @@ router.post('/login', authController.login);
 router.post('/refresh', authController.refresh);
 router.post('/logout', authController.logout);
 router.get('/me', authMiddleware.authMiddleware, authController.me);
+router.get('/verify/:token', authController.verifyEmail);
 
 module.exports = router;
