@@ -1,5 +1,6 @@
 // Take in a URL extract the needed parts for the GitHub API, call 5 APIS that will return us all the information needed for the LLM 
-
+const mongoose = require("mongoose");
+const storedRepo = require("../models/storedRepo");
 
 const analyzeRepo = async (repoUrl, userId) => {
     if (!repoUrl) {

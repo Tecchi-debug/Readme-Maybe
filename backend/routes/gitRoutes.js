@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const analyzeRepoController = require('../controllers/analyzeRepoController');
 const checkDifferenceController = require('../controllers/commitDifferenceController');
-const analyzeFileContentsController = require('../controllers/analyzeRepoController');
+const analyzeFileContentsController = require('../controllers/fileContentsController');
 
 
 router.post('/analyze',analyzeRepoController);
