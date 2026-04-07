@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express'); 
-const testRepoRoute = require('./routes/testRepoRoute');
 const analyzeUrlRoute = require('./routes/gitRoutes');
 const cors = require('cors');
 const mongoose = require("mongoose");
@@ -229,5 +228,5 @@ app.post('/api/searchcards', async (req, res, next) => {
 
 
 app.use('/',analyzeUrlRoute);
-app.use('/',testRepoRoute);
+
 
