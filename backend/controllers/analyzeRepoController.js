@@ -9,7 +9,7 @@ const analyzeRepoController = async(req,res) => {
         const { userId } = req.body;
         const repoData = await analyzeUrl(repoUrl,userId);
         const saveRepoData = await saveRepo(repoData);
-        res.status(200).json(saveRepoData);
+        res.status(200).json(repoData);
     } catch(error){
         res.status(500).json({
             error:error.message
