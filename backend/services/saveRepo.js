@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const StoredRepo = require('../models/storedRepo');
+const StoredRepo = require('../models/StoredRepo');
 
 const saveRepo = async (repoData) => {
     const {
