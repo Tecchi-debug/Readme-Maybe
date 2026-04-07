@@ -65,22 +65,26 @@ function Login() {
       if (!response.ok) {
         setMessage(res.message || "Login failed");
       } else {
-        // Store user info and JWT token in localStorage so other pages can access it
-        const user = {
-          firstName: res.user.FirstName,
-          lastName: res.user.LastName,
-          id: res.user._id,
-          token: res.jwtToken,
-        };
-        localStorage.setItem("user_data", JSON.stringify(user));
-
-        setMessage("");
-        window.location.href = "/Dashboard";
+        completeAuth(res);
       }
     } catch (error: any) {
       alert(error.toString());
       return;
     }
+  }
+
+  function completeAuth(res: any): void {
+    const user = {
+      firstName: res.user.FirstName,
+      lastName: res.user.LastName,
+      id: res.user._id,
+      token: res.jwtToken,
+      refreshToken: res.refreshToken,
+    };
+
+    localStorage.setItem("user_data", JSON.stringify(user));
+    setMessage("");
+    window.location.href = "/Dashboard";
   }
 
   // Sends registration data to the backend and switches to sign-in tab on success
@@ -105,8 +109,7 @@ function Login() {
       if (!response.ok) {
         setMessage(res.message || "Registration failed");
       } else {
-        setMessage("Account created! You can now sign in.");
-        setIsCreateAccount(false);
+        completeAuth(res);
       }
     } catch (error: any) {
       alert(error.toString());
@@ -128,6 +131,14 @@ function Login() {
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
+
+  const isErrorMessage =
+    message.toLowerCase().includes("invalid") ||
+    message.toLowerCase().includes("incorrect") ||
+    message.toLowerCase().includes("failed") ||
+    message.toLowerCase().includes("in use") ||
+    message.toLowerCase().includes("verify") ||
+    message.toLowerCase().includes("required");
 
   return (
     <div className="grid h-screen w-full grid-cols-[57%_43%] overflow-hidden font-mono">
@@ -360,7 +371,7 @@ function Login() {
 
               {/* Feedback message — shown when message state is non-empty */}
               {message && (
-                <div className={`rounded-xl border px-4 py-3 text-sm ${message.toLowerCase().includes("invalid") || message.toLowerCase().includes("incorrect") || message.toLowerCase().includes("failed") || message.toLowerCase().includes("in use")
+                <div className={`rounded-xl border px-4 py-3 text-sm ${isErrorMessage
                     ? "border-red-400/50 bg-red-500/10 text-red-200"
                     : "border-[#1D9E75]/50 bg-[#1D9E75]/10 text-green-200"
                   }`}>
