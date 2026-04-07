@@ -3,6 +3,7 @@ const JwtSession = require('../models/JwtSession');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const { getJwtSecret } = require('../services/secretsManager');
 
 const ACCESS_TOKEN_TTL = '1h';
 const REFRESH_TOKEN_TTL = '7d';
@@ -11,11 +12,11 @@ const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 const signAccessToken = (userId, jti) => (
-    jwt.sign({id: userId, jti, type: 'access'}, process.env.JWT_SECRET, {expiresIn: ACCESS_TOKEN_TTL})
+    jwt.sign({id: userId, jti, type: 'access'}, getJwtSecret(), {expiresIn: ACCESS_TOKEN_TTL})
 );
 
 const signRefreshToken = (userId, jti) => (
-    jwt.sign({id: userId, jti, type: 'refresh'}, process.env.JWT_SECRET, {expiresIn: REFRESH_TOKEN_TTL})
+    jwt.sign({id: userId, jti, type: 'refresh'}, getJwtSecret(), {expiresIn: REFRESH_TOKEN_TTL})
 );
 
 const buildSessionMetadata = (req) => ({
@@ -140,7 +141,7 @@ const refresh = async (req, res) => {
             return res.status(400).json({message: 'Refresh token is required'});
         }
 
-        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+        const decoded = jwt.verify(refreshToken, getJwtSecret());
         if (decoded.type !== 'refresh' || !decoded.jti) {
             return res.status(401).json({message: 'Refresh token is not valid'});
         }
@@ -183,7 +184,7 @@ const logout = async (req, res) => {
             return res.status(400).json({message: 'Token is required'});
         }
 
-        const decoded = jwt.verify(tokenToInspect, process.env.JWT_SECRET);
+        const decoded = jwt.verify(tokenToInspect, getJwtSecret());
         if (!decoded.jti) {
             return res.status(400).json({message: 'Session id missing from token'});
         }
