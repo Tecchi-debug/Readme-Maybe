@@ -4,7 +4,7 @@ const analyzeUrlRoute = require('./routes/gitRoutes');
 const cors = require('cors');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
-const { loadAwsSecrets, getMongoUri, getAppPort, getSecretsDebugInfo } = require('./services/secretsManager');
+const { loadSecrets, getSecretValue, getMongoUri, getAppPort, getSecretsDebugInfo } = require('./services/secretsManager');
 
 
 const app = express();
@@ -160,7 +160,14 @@ app.use('/',testRepoRoute);
 
 async function startServer() {
     try {
-        await loadAwsSecrets();
+        await loadSecrets();
+        getSecretValue('MONGODB_URI');
+        getSecretValue('JWT_SECRET');
+        getSecretValue('EMAIL_HOST');
+        getSecretValue('EMAIL_USER');
+        getSecretValue('EMAIL_PASS');
+        getSecretValue('EMAIL_FROM');
+
         await initDatabase();
 
         const secretsInfo = getSecretsDebugInfo();

@@ -101,10 +101,11 @@ const register = async (req, res) => {
         });
 
         // generate email jwt token
-        const emailToken = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '1d'});
+        const emailToken = jwt.sign({ id: newUser._id }, getJwtSecret(), { expiresIn: '1d'});
 
         // email url
-        const url = `http://localhost:${process.env.PORT}/api/auth/verify/${emailToken}`;
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const url = `${baseUrl}/api/auth/verify/${emailToken}`;
 
         // send verification email
         await sendEmail(
@@ -252,7 +253,7 @@ const verifyEmail = async (req, res) => {
         }
 
         // decode the token and get the user
-        const decode = jwt.verify(token, process.env.JWT_SECRET);
+        const decode = jwt.verify(token, getJwtSecret());
         const user = await User.findById(decode.id);
 
         if(!user) return res.status(400).send('User not found.');
