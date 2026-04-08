@@ -2,13 +2,17 @@ const path = require('path');
 const dotenv = require('dotenv');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 
+// Define the .env path first, then load it immediately so that USE_LOCAL_SECRETS
+// is available in process.env before shouldLoadLocalSecrets() is ever called
+const LOCAL_ENV_PATH = path.join(__dirname, '..', '.env');
+dotenv.config({ path: LOCAL_ENV_PATH });
+
 let cachedSecrets = null;
 let loadedAt = null;
 let loadedSource = null;
 
 const SECRET_REGION = process.env.AWS_REGION || 'us-east-2';
 const SECRET_ID = process.env.AWS_SECRET_ID || 'prod/readmemaybe/app';
-const LOCAL_ENV_PATH = path.join(__dirname, '..', '.env');
 const LOCAL_SECRET_KEYS = [
     'MONGODB_URI',
     'JWT_SECRET',
@@ -19,6 +23,10 @@ const LOCAL_SECRET_KEYS = [
     'EMAIL_FROM',
     'GITHUB_TOKEN',
     'PORT',
+    'GITHUB_CLIENT_ID',
+    'GITHUB_CLIENT_SECRET',
+    'GITHUB_CALLBACK_URL',
+    'FRONTEND_APP_URL',
 ];
 
 function shouldLoadLocalSecrets() {
@@ -34,7 +42,6 @@ function shouldLoadLocalSecrets() {
 }
 
 function loadSecretsFromDotEnv() {
-    dotenv.config({ path: LOCAL_ENV_PATH });
 
     cachedSecrets = LOCAL_SECRET_KEYS.reduce((secrets, key) => {
         if (process.env[key] !== undefined) {

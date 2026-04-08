@@ -34,7 +34,7 @@ const getFrontendAuthRedirectBase = () => (
 const signGithubState = () => (
     jwt.sign(
         { nonce: crypto.randomUUID(), provider: 'github' },
-        process.env.JWT_SECRET,
+        getJwtSecret(),
         { expiresIn: '10m' }
     )
 );
@@ -50,7 +50,7 @@ const buildAuthRedirectUrl = (params) => {
 };
 
 const splitName = (name = '', fallback = '') => {
-    const trimmed = name.trim();
+    const trimmed = (name || '').trim();
     if (!trimmed) {
         return { firstName: fallback || 'GitHub', lastName: 'User' };
     }
@@ -63,12 +63,13 @@ const splitName = (name = '', fallback = '') => {
 };
 
 const findAvailableLogin = async (baseLogin) => {
-    let candidate = baseLogin.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '') || 'github-user';
+    const base = (baseLogin || '').trim().toLowerCase().replace(/[^a-z0-9-_]/g, '') || 'github-user';
+    let candidate = base;
     let suffix = 0;
 
     while (await User.findOne({ Login: candidate })) {
         suffix += 1;
-        candidate = `${baseLogin.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '') || 'github-user'}-${suffix}`;
+        candidate = `${base}-${suffix}`;
     }
 
     return candidate;
@@ -379,7 +380,7 @@ const githubCallback = async (req, res) => {
             return res.redirect(buildAuthRedirectUrl({ error: 'Missing GitHub callback parameters' }));
         }
 
-        const decodedState = jwt.verify(state, process.env.JWT_SECRET);
+        const decodedState = jwt.verify(state, getJwtSecret());
         if (decodedState.provider !== 'github') {
             return res.redirect(buildAuthRedirectUrl({ error: 'Invalid GitHub callback state' }));
         }
@@ -401,7 +402,7 @@ const githubCallback = async (req, res) => {
             lastName: user.LastName
         }));
     } catch (error) {
-        console.error(error);
+        console.error('[githubCallback] error:', error?.message || error);
         return res.redirect(buildAuthRedirectUrl({ error: 'GitHub sign-in failed' }));
     }
 };
@@ -588,4 +589,4 @@ const verifyEmail = async (req, res) => {
     }
 };
 
-module.exports = {register, login, refresh, logout, me, verifyEmail};
+module.exports = {register, login, refresh, logout, me, verifyEmail, githubStart, githubCallback, githubRepos};

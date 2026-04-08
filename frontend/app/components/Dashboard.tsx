@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+// -------------------------------------------------------------------------
+// Types
+// -------------------------------------------------------------------------
+
+// user session shape from localStorage
 type StoredUserData = {
   id?: string;
   token?: string;
@@ -11,6 +16,7 @@ type StoredUserData = {
   lastName?: string;
 };
 
+// github repo from the oauth /repos endpoint (for the dropdown)
 type GithubRepo = {
   id: number;
   name: string;
@@ -21,237 +27,339 @@ type GithubRepo = {
   language: string | null;
 };
 
-type GeneratedReadmeResponse = {
-  message?: string;
-  readme?: string;
-  selected_files?: string[];
-  repo?: string;
+// stored repo doc from GET /api/repos
+type StoredRepo = {
+  _id: string;
+  Name: string;
+  FullName: string;
+  RemoteUrl: string;
+  Readme: string;
+  Metadata: {
+    languages?: string[];
+    language?: string;
+  };
+  UpdatedAt: string;
+  CreatedAt: string;
+};
+
+// stats computed server-side and returned with /api/repos
+type DashboardStats = {
+  totalReadmes: number;
+  totalRepos: number;
+  thisWeekCount: number;
 };
 
 // -------------------------------------------------------------------------
-// Main Dashboard UI
+// Helpers
+// -------------------------------------------------------------------------
+
+// returns a relative time string e.g. "3 mins ago"
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  return `${days} days ago`;
+}
+
+// -------------------------------------------------------------------------
+// Main Dashboard Component
 // -------------------------------------------------------------------------
 
 export default function Dashboard() {
+
+  // --- User identity ---
+  const [welcomeName, setWelcomeName] = useState("there");
+  const [displayName, setDisplayName] = useState("");
+  const [userInitials, setUserInitials] = useState("RM");
+
+  // --- GitHub repo dropdown (for the "Submit a repo" selector) ---
+  const [githubRepos, setGithubRepos] = useState<GithubRepo[]>([]);
+  const [isLoadingRepos, setIsLoadingRepos] = useState(true);
+  const [reposMessage, setReposMessage] = useState("");
+
+  // --- Generate README form ---
   const [repoUrl, setRepoUrl] = useState("");
   const [selectedRepoUrl, setSelectedRepoUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
-  const [githubRepos, setGithubRepos] = useState<GithubRepo[]>([]);
-  const [isLoadingRepos, setIsLoadingRepos] = useState(true);
-  const [reposMessage, setReposMessage] = useState("");
-  const [welcomeName, setWelcomeName] = useState("Jane");
-  const [displayName, setDisplayName] = useState("Jane Doe");
-  const [userInitials, setUserInitials] = useState("JD");
+
+  // --- Generated README preview ---
   const [generatedReadme, setGeneratedReadme] = useState("");
   const [generatedRepoName, setGeneratedRepoName] = useState("");
-  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
 
+  // --- Dashboard stats and recent activity (from /api/repos) ---
+  const [stats, setStats] = useState<DashboardStats>({ totalReadmes: 0, totalRepos: 0, thisWeekCount: 0 });
+  const [recentRepos, setRecentRepos] = useState<StoredRepo[]>([]);
+  const [isLoadingActivity, setIsLoadingActivity] = useState(true);
+
+  // Tracks which card is mid-delete or mid-regenerate to show per-card loading states
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+
+  // reads user session from localStorage
   function getStoredUserData(): StoredUserData | null {
-    const userDataRaw = localStorage.getItem("user_data");
-    if (!userDataRaw) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(userDataRaw);
-    } catch {
-      return null;
-    }
+    const raw = localStorage.getItem("user_data");
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
   }
 
-  useEffect(() => {
-    const userData = getStoredUserData();
-
-    if (userData?.firstName || userData?.lastName) {
-      const firstName = userData?.firstName || "User";
-      const lastName = userData?.lastName || "";
-      const initials = `${firstName.charAt(0)}${lastName.charAt(0) || firstName.charAt(1) || ""}`.toUpperCase();
-
-      setWelcomeName(firstName);
-      setDisplayName(`${firstName} ${lastName}`.trim());
-      setUserInitials(initials || "RM");
-    }
-
-    if (!userData?.token) {
-      setIsLoadingRepos(false);
-      setReposMessage("Sign in with GitHub to load your repos.");
-      return;
-    }
-
-    if (!process.env.NEXT_PUBLIC_API_URL) {
-      setIsLoadingRepos(false);
-      setReposMessage("API URL is not configured.");
-      return;
-    }
-
-    let ignore = false;
-
-    async function loadGithubRepos(): Promise<void> {
-      setIsLoadingRepos(true);
-      setReposMessage("");
-
-      const sendRepoRequest = async (authToken: string) => (
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/github/repos`, {
-          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-        })
-      );
-
-      try {
-        let response = await sendRepoRequest(userData?.token || "");
-        let data = await response.json();
-
-        if (response.status === 401 && userData?.refreshToken) {
-          const nextAccessToken = await refreshAccessToken(userData);
-
-          if (nextAccessToken) {
-            response = await sendRepoRequest(nextAccessToken);
-            data = await response.json();
-          }
-        }
-
-        if (!response.ok) {
-          if (!ignore) {
-            setGithubRepos([]);
-            setReposMessage(data?.message || "Couldn't load your GitHub repos.");
-          }
-          return;
-        }
-
-        if (!ignore) {
-          const repos = Array.isArray(data?.repos) ? data.repos : [];
-          setGithubRepos(repos);
-
-          if (repos.length === 0) {
-            setReposMessage("No GitHub repos available yet.");
-          }
-        }
-      } catch (error) {
-        if (!ignore) {
-          setGithubRepos([]);
-          setReposMessage(
-            error instanceof Error ? error.message : "Couldn't load your GitHub repos."
-          );
-        }
-      } finally {
-        if (!ignore) {
-          setIsLoadingRepos(false);
-        }
-      }
-    }
-
-    void loadGithubRepos();
-
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
-  const isRepoMessageError =
-    reposMessage.toLowerCase().includes("couldn't") ||
-    reposMessage.toLowerCase().includes("sign in") ||
-    reposMessage.toLowerCase().includes("not configured") ||
-    reposMessage.toLowerCase().includes("failed") ||
-    reposMessage.toLowerCase().includes("not connected");
-
-  async function refreshAccessToken(userData: any): Promise<string> {
+  // tries to refresh the access token, updates localStorage, returns new token
+  async function refreshAccessToken(userData: StoredUserData): Promise<string> {
     const refreshToken = userData?.refreshToken || "";
-
-    if (!refreshToken || !process.env.NEXT_PUBLIC_API_URL) {
-      return "";
-    }
+    if (!refreshToken || !process.env.NEXT_PUBLIC_API_URL) return "";
 
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),
     });
 
     const data = await response.json();
-    if (!response.ok || !data?.jwtToken || !data?.refreshToken) {
-      return "";
-    }
+    if (!response.ok || !data?.jwtToken || !data?.refreshToken) return "";
 
-    const updatedUserData = {
-      ...userData,
-      token: data.jwtToken,
-      refreshToken: data.refreshToken,
-    };
-
-    localStorage.setItem("user_data", JSON.stringify(updatedUserData));
+    const updated = { ...userData, token: data.jwtToken, refreshToken: data.refreshToken };
+    localStorage.setItem("user_data", JSON.stringify(updated));
     return data.jwtToken;
   }
 
+
+  // on mount: set user info, load github repos dropdown, load stats + activity
+  useEffect(() => {
+    const userData = getStoredUserData();
+
+    // populate sidebar from localStorage
+    if (userData?.firstName) {
+      const first = userData.firstName;
+      const last = userData.lastName || "";
+      const initials = last ? `${first.charAt(0)}${last.charAt(0)}`.toUpperCase() : first.charAt(0).toUpperCase();
+      setWelcomeName(first);
+      setDisplayName(last ? `${first} ${last}` : first);
+      setUserInitials(initials || "RM");
+    }
+
+    if (!userData?.token || !process.env.NEXT_PUBLIC_API_URL) {
+      setIsLoadingRepos(false);
+      setIsLoadingActivity(false);
+      setReposMessage("Sign in to load your repos.");
+      return;
+    }
+
+    let cancelled = false;
+
+    // authenticated GET, retries once on 401 with refreshed token
+    async function authGet(path: string): Promise<Response> {
+      const token = getStoredUserData()?.token || "";
+      let res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 401 && userData?.refreshToken) {
+        const next = await refreshAccessToken(userData);
+        if (next) {
+          res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${path}`, {
+            headers: { Authorization: `Bearer ${next}` },
+          });
+        }
+      }
+      return res;
+    }
+
+    // load github repos for the dropdown
+    async function loadGithubRepos() {
+      setIsLoadingRepos(true);
+      try {
+        const res = await authGet("/api/auth/github/repos");
+        const data = await res.json();
+        if (!cancelled) {
+          setGithubRepos(res.ok && Array.isArray(data?.repos) ? data.repos : []);
+          if (!res.ok) setReposMessage(data?.message || "Couldn't load GitHub repos.");
+        }
+      } catch {
+        if (!cancelled) setReposMessage("Couldn't load GitHub repos.");
+      } finally {
+        if (!cancelled) setIsLoadingRepos(false);
+      }
+    }
+
+    // load stats and recent activity
+    async function loadDashboardData() {
+      setIsLoadingActivity(true);
+      try {
+        const res = await authGet("/api/repos");
+        const data = await res.json();
+        if (!cancelled && res.ok) {
+          setStats(data.stats ?? { totalReadmes: 0, totalRepos: 0, thisWeekCount: 0 });
+          setRecentRepos((data.repos ?? []).slice(0, 3));
+        }
+      } catch {
+        // stats just show 0 on failure
+      } finally {
+        if (!cancelled) setIsLoadingActivity(false);
+      }
+    }
+
+    void loadGithubRepos();
+    void loadDashboardData();
+    return () => { cancelled = true; };
+  }, []);
+
+
+  // POST to /analyze, saves result, shows preview, refreshes stats
   async function handleGenerateReadme(): Promise<void> {
-    const trimmedRepoUrl = repoUrl.trim();
+    const trimmedUrl = repoUrl.trim();
+    if (!trimmedUrl) { setSubmitMessage("Please enter a GitHub repo URL."); return; }
 
-    if (!trimmedRepoUrl) {
-      setSubmitMessage("Please enter a GitHub repo URL.");
-      return;
-    }
-
-    if (!process.env.NEXT_PUBLIC_API_URL) {
-      setSubmitMessage("API URL is not configured.");
-      return;
-    }
+    const userData = getStoredUserData();
+    if (!userData?.id) { setSubmitMessage("Please sign in before submitting a repo."); return; }
+    if (!process.env.NEXT_PUBLIC_API_URL) { setSubmitMessage("API URL is not configured."); return; }
 
     setIsSubmitting(true);
     setSubmitMessage("");
     setGeneratedReadme("");
     setGeneratedRepoName("");
-    setSelectedFiles([]);
 
     try {
-      const sendGenerateRequest = async () => (
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/readme/generate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            repoUrl: trimmedRepoUrl,
-          }),
-        })
-      );
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(userData.token ? { Authorization: `Bearer ${userData.token}` } : {}),
+        },
+        body: JSON.stringify({ repoUrl: trimmedUrl, userId: userData.id }),
+      });
 
-      const response = await sendGenerateRequest();
-      const data: GeneratedReadmeResponse = await response.json();
+      const data = await res.json();
+      if (!res.ok) { setSubmitMessage(data?.error || data?.message || "Failed to generate README."); return; }
 
-      if (!response.ok) {
-        setSubmitMessage(data?.message || "Failed to generate README.");
-        return;
+      // Show the inline preview
+      setGeneratedReadme(data?.Readme || "");
+      setGeneratedRepoName(data?.Name || data?.FullName || "");
+      setSubmitMessage("README generated successfully.");
+
+      // prepend returned repo immediately, then confirm with a refetch
+      if (data?._id) {
+        setRecentRepos((prev) => {
+          const filtered = prev.filter((r) => r._id !== data._id);
+          return [data, ...filtered].slice(0, 3);
+        });
       }
 
-      setGeneratedReadme(data?.readme || "");
-      setGeneratedRepoName(data?.repo || "");
-      setSelectedFiles(Array.isArray(data?.selected_files) ? data.selected_files : []);
-      setSubmitMessage(data?.message || "README generated successfully.");
-    } catch (error) {
-      setSubmitMessage(
-        error instanceof Error ? error.message : "Failed to generate README."
-      );
+      // refetch to keep counts accurate
+      const statsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos`, {
+        headers: userData.token ? { Authorization: `Bearer ${userData.token}` } : {},
+      });
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        setStats(statsData.stats ?? stats);
+        setRecentRepos((statsData.repos ?? []).slice(0, 3));
+      }
+    } catch (err) {
+      setSubmitMessage(err instanceof Error ? err.message : "Failed to generate README.");
     } finally {
       setIsSubmitting(false);
     }
   }
 
+  // derived flag for dropdown error styling
+  const isRepoMessageError = reposMessage.toLowerCase().includes("couldn't") ||
+    reposMessage.toLowerCase().includes("sign in") ||
+    reposMessage.toLowerCase().includes("failed");
+
+  // DELETE /api/repos/:id, removes from state, refreshes stats
+  async function handleDeleteRepo(repoId: string): Promise<void> {
+    const userData = getStoredUserData();
+    if (!userData?.token || !process.env.NEXT_PUBLIC_API_URL) return;
+
+    setDeletingId(repoId);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos/${repoId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${userData.token}` },
+      });
+      if (!res.ok) return;
+
+      // optimistically remove from list
+      setRecentRepos((prev) => prev.filter((r) => r._id !== repoId));
+
+      // Clear preview if it was showing this repo
+      setGeneratedReadme((prev) => prev);
+
+      // refresh stats
+      const statsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos`, {
+        headers: { Authorization: `Bearer ${userData.token}` },
+      });
+      if (statsRes.ok) {
+        const data = await statsRes.json();
+        setStats(data.stats ?? stats);
+        setRecentRepos((data.repos ?? []).slice(0, 3));
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  // re-runs /analyze for a card, bumps UpdatedAt, refreshes list
+  async function handleRegenerateRepo(repo: StoredRepo): Promise<void> {
+    const userData = getStoredUserData();
+    if (!userData?.id || !process.env.NEXT_PUBLIC_API_URL) return;
+
+    setRegeneratingId(repo._id);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(userData.token ? { Authorization: `Bearer ${userData.token}` } : {}),
+        },
+        body: JSON.stringify({ repoUrl: repo.RemoteUrl, userId: userData.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) return;
+
+      // show updated preview
+      setGeneratedReadme(data?.Readme || "");
+      setGeneratedRepoName(data?.Name || data?.FullName || "");
+
+      // prepend updated repo then refresh
+      if (data?._id) {
+        setRecentRepos((prev) => {
+          const filtered = prev.filter((r) => r._id !== data._id);
+          return [data, ...filtered].slice(0, 3);
+        });
+      }
+      const statsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos`, {
+        headers: userData.token ? { Authorization: `Bearer ${userData.token}` } : {},
+      });
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        setStats(statsData.stats ?? stats);
+        setRecentRepos((statsData.repos ?? []).slice(0, 3));
+      }
+    } finally {
+      setRegeneratingId(null);
+    }
+  }
+
+
   return (
     <div className="flex h-screen w-full bg-[#13111e] font-mono overflow-hidden relative">
-      
-      {/* ----------------------------------------------------------------
-          Background Circles
-      ---------------------------------------------------------------- */}
-      {/* Top right circle */}
+
+      {/* bg glows */}
       <div className="pointer-events-none absolute -top-20 right-[-60px] w-[340px] h-[340px] rounded-full bg-[#1d9e75] opacity-[0.07]" />
+      <div className="pointer-events-none absolute bottom-[-80px] left-[160px] w-[300px] h-[300px] rounded-full bg-[#534ab7] opacity-[0.07]" />
+      <div className="pointer-events-none absolute bottom-[-60px] right-[80px] w-[260px] h-[260px] rounded-full bg-[#1d9e75] opacity-[0.06]" />
+      <div className="pointer-events-none absolute top-[40%] left-[-60px] w-[220px] h-[220px] rounded-full bg-[#7f77dd] opacity-[0.05]" />
 
       {/* ----------------------------------------------------------------
           Sidebar
       ---------------------------------------------------------------- */}
       <aside className="flex flex-col w-[220px] flex-shrink-0 bg-[#1c1a2e] border-r border-[#252240] z-10">
 
-        {/* Logo */}
+        {/* Logo mark + wordmark */}
         <div className="flex items-center gap-3 px-5 py-[22px] border-b border-[#252240]">
           <div className="flex flex-col justify-center gap-[3px] w-[33px] h-[32px] bg-[#1d9e75] rounded-[8px] px-[7px] flex-shrink-0">
             <div className="h-[2px] bg-[#d9d9d9] rounded-sm w-full" />
@@ -259,36 +367,32 @@ export default function Dashboard() {
             <div className="h-[2px] bg-[#d9d9d9] rounded-sm opacity-60 w-[80%]" />
             <div className="h-[2px] bg-[#d9d9d9] rounded-sm opacity-40 w-[50%]" />
           </div>
-          <span className="text-[#eeedfe] text-[20px] font-medium tracking-tight">
-            ReadMeMaybe
-          </span>
+          <span className="text-[#eeedfe] text-[20px] font-medium tracking-tight">ReadMeMaybe</span>
         </div>
 
-        {/* Nav items */}
+        {/* Nav links */}
         <nav className="flex flex-col gap-1 px-[10px] pt-4 flex-1">
 
-          {/* Active: Dashboard */}
+          {/* Dashboard - active state */}
           <div className="flex items-center gap-[10px] px-[9px] py-2 rounded-[7px] bg-[#252240] border-l-[3px] border-[#1d9e75]">
             <div className="grid grid-cols-2 gap-[2px] w-[15px] h-[15px] flex-shrink-0">
-              <div className="bg-[#1d9e75] rounded-[1.5px]" />
-              <div className="bg-[#1d9e75] rounded-[1.5px]" />
-              <div className="bg-[#1d9e75] rounded-[1.5px]" />
-              <div className="bg-[#1d9e75] rounded-[1.5px]" />
+              <div className="bg-[#1d9e75] rounded-[1.5px]" /><div className="bg-[#1d9e75] rounded-[1.5px]" />
+              <div className="bg-[#1d9e75] rounded-[1.5px]" /><div className="bg-[#1d9e75] rounded-[1.5px]" />
             </div>
             <span className="text-[#eeedfe] text-[13px] font-bold">Dashboard</span>
           </div>
 
-          {/* Inactive: My Repos */}
-          <div className="flex items-center gap-[10px] px-[10px] py-2 rounded-[7px] cursor-pointer hover:bg-[#252240]/50">
+          {/* My READMEs - links to /MyReadmes */}
+          <Link href="/MyReadmes" className="flex items-center gap-[10px] px-[10px] py-2 rounded-[7px] hover:bg-[#252240]/50">
             <div className="flex flex-col gap-[3px] w-[15px] flex-shrink-0">
               <div className="h-[3px] bg-[#7f77dd] rounded-sm w-full" />
               <div className="h-[3px] bg-[#7f77dd] rounded-sm w-[80%]" />
               <div className="h-[3px] bg-[#7f77dd] rounded-sm w-[65%]" />
             </div>
-            <span className="text-[#7f77dd] text-[13px] font-medium">My Repos</span>
-          </div>
+            <span className="text-[#7f77dd] text-[13px] font-medium">My READMEs</span>
+          </Link>
 
-          {/* Inactive: About Us */}
+          {/* About Us */}
           <Link href="/About" className="flex items-center gap-[10px] px-[10px] py-2 rounded-[7px] hover:bg-[#252240]/50">
             <svg className="w-[15px] h-[15px] flex-shrink-0" viewBox="0 0 15 15" fill="none">
               <circle cx="7.5" cy="4.5" r="2.5" stroke="#7f77dd" strokeWidth="1.5" />
@@ -296,23 +400,32 @@ export default function Dashboard() {
             </svg>
             <span className="text-[#7f77dd] text-[13px] font-medium">About Us</span>
           </Link>
-
         </nav>
 
-        {/* User footer */}
+        {/* User footer - initials avatar, display name, logout button */}
         <div className="flex items-center gap-3 px-5 py-4 border-t border-[#252240]">
           <div className="flex items-center justify-center w-[30px] h-[30px] rounded-full bg-[#534ab7] text-[#eeedfe] text-[12px] font-medium flex-shrink-0">
             {userInitials}
           </div>
-          <div>
-            <p className="text-[#eeedfe] text-[13px] font-medium leading-tight">{displayName}</p>
+          <div className="flex-1 min-w-0">
+            <p className="text-[#eeedfe] text-[13px] font-medium leading-tight truncate">{displayName}</p>
           </div>
+          {/* Logout - clears session and redirects to /Login */}
+          <button
+            onClick={() => { localStorage.removeItem("user_data"); window.location.href = "/Login"; }}
+            title="Log out"
+            className="text-[#7f77dd] hover:text-[#e0a4be] transition flex-shrink-0"
+          >
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+              <path d="M6 2H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3M10 10l3-2.5L10 5M13 7.5H6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
         </div>
-
       </aside>
 
+
       {/* ----------------------------------------------------------------
-          Main content
+          Main content area
       ---------------------------------------------------------------- */}
       <main className="flex-1 flex flex-col px-8 pt-8 pb-6 overflow-y-auto relative bg-gradient-to-br from-[#0f7f5f40] via-transparent to-[#1c1530]">
 
@@ -324,48 +437,66 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Stat cards */}
+        {/* stat cards: live data from /api/repos */}
         <div className="grid grid-cols-3 gap-3 mb-7">
 
+          {/* READMEs generated: repos with non-empty Readme */}
           <div className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] p-4">
             <p className="text-[#7f77dd] text-[11px] font-medium uppercase tracking-wide leading-tight mb-1">
               READMEs<br />Generated
             </p>
-            <p className="text-[#eeedfe] text-[24px] font-medium mt-2">12</p>
-            <p className="text-[#5dcaa5] text-[10px] mt-1">+2 this week</p>
+            <p className="text-[#eeedfe] text-[24px] font-medium mt-2">
+              {isLoadingActivity ? "-" : stats.totalReadmes}
+            </p>
+            <p className="text-[#5dcaa5] text-[10px] mt-1">
+              {isLoadingActivity ? "" : `+${stats.thisWeekCount} this week`}
+            </p>
           </div>
 
+          {/* Total repos analyzed */}
           <div className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] p-4">
             <p className="text-[#7f77dd] text-[11px] font-medium uppercase tracking-wide leading-tight mb-1">
               Repos<br />Analyzed
             </p>
-            <p className="text-[#eeedfe] text-[24px] font-medium mt-2">8</p>
-            <p className="text-[#afa9ec] text-[10px] mt-1">2 in progress</p>
+            <p className="text-[#eeedfe] text-[24px] font-medium mt-2">
+              {isLoadingActivity ? "-" : stats.totalRepos}
+            </p>
+            <p className="text-[#afa9ec] text-[10px] mt-1">all time</p>
           </div>
 
+          {/* Last generated: date of the most recently updated repo */}
           <div className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] p-4">
             <p className="text-[#7f77dd] text-[11px] font-medium uppercase tracking-wide leading-tight mb-1">
-              Saved<br />Versions
+              Last<br />Generated
             </p>
-            <p className="text-[#eeedfe] text-[24px] font-medium mt-2">24</p>
-            <p className="text-[#5dcaa5] text-[10px] mt-1">across all repos</p>
+            <p className="text-[#eeedfe] text-[24px] font-medium mt-2">
+              {isLoadingActivity
+                ? "-"
+                : recentRepos.length > 0
+                ? new Date(recentRepos[0].UpdatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+                : "-"}
+            </p>
+            <p className="text-[#afa9ec] text-[10px] mt-1">
+              {isLoadingActivity
+                ? ""
+                : recentRepos.length > 0
+                ? recentRepos[0].Name
+                : "no activity yet"}
+            </p>
           </div>
-
         </div>
 
-        {/* Submit a repo */}
+
+        {/* submit a repo: dropdown + manual URL */}
         <div className="mb-7">
           <p className="text-[#eeedfe] text-[16px] font-medium mb-3">Submit a repo</p>
           <div className="max-w-[672px] space-y-3">
+
+            {/* GitHub repo picker: populated from /api/auth/github/repos */}
             <div className="relative">
               <select
                 value={selectedRepoUrl}
-                onChange={(e) => {
-                  const nextRepoUrl = e.target.value;
-                  setSelectedRepoUrl(nextRepoUrl);
-                  setRepoUrl(nextRepoUrl);
-                  setSubmitMessage("");
-                }}
+                onChange={(e) => { setSelectedRepoUrl(e.target.value); setRepoUrl(e.target.value); setSubmitMessage(""); }}
                 disabled={isLoadingRepos}
                 className="w-full appearance-none rounded-[10px] border border-[#3c3489] border-[0.5px] bg-[#1c1a2e] px-4 py-3 pr-12 text-[12px] text-[#eeedfe] outline-none transition focus:border-[#7f77dd] disabled:cursor-not-allowed disabled:text-[#676670]"
               >
@@ -385,25 +516,18 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {reposMessage ? (
-              <p className={`text-[12px] ${isRepoMessageError ? "text-[#e0a4be]" : "text-[#7f77dd]"}`}>
-                {reposMessage}
-              </p>
-            ) : (
-              <p className="text-[12px] text-[#7f77dd]">
-                Select a connected GitHub repo or paste a URL manually.
-              </p>
-            )}
+            {/* Hint / error below the dropdown */}
+            <p className={`text-[12px] ${reposMessage && isRepoMessageError ? "text-[#e0a4be]" : "text-[#7f77dd]"}`}>
+              {reposMessage || "Select a connected GitHub repo or paste a URL manually."}
+            </p>
 
+            {/* Manual URL input + submit button */}
             <div className="flex gap-3">
               <input
                 type="text"
                 placeholder="https://github.com/user/repo-name"
                 value={repoUrl}
-                onChange={(e) => {
-                  setRepoUrl(e.target.value);
-                  setSelectedRepoUrl("");
-                }}
+                onChange={(e) => { setRepoUrl(e.target.value); setSelectedRepoUrl(""); }}
                 className="w-[380px] rounded-[10px] border border-[#3c3489] border-[0.5px] bg-[#1c1a2e] px-4 py-2.5 text-[#eeedfe] text-[12px] placeholder:text-[#3c3489] outline-none focus:border-[#7f77dd] transition"
               />
               <button
@@ -415,19 +539,17 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-          {submitMessage ? (
-            <p className="mt-2 text-[12px] text-[#afa9ec]">{submitMessage}</p>
-          ) : null}
+          {submitMessage && <p className="mt-2 text-[12px] text-[#afa9ec]">{submitMessage}</p>}
         </div>
 
-        {generatedReadme ? (
-          <div className="mb-7 rounded-[12px] border border-[#3c3489] border-[0.5px] bg-[#1c1a2e] p-5 shadow-[0_0_0_1px_rgba(60,52,137,0.1)]">
+
+        {/* inline README preview: shown after generation */}
+        {generatedReadme && (
+          <div className="mb-7 rounded-[12px] border border-[#3c3489] border-[0.5px] bg-[#1c1a2e] p-5">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-[#7f77dd]">Generated README</p>
-                <h3 className="mt-2 text-[20px] font-medium text-[#eeedfe]">
-                  {generatedRepoName || "Preview"}
-                </h3>
+                <h3 className="mt-2 text-[20px] font-medium text-[#eeedfe]">{generatedRepoName || "Preview"}</h3>
               </div>
               <button
                 type="button"
@@ -437,106 +559,147 @@ export default function Dashboard() {
                 Copy Markdown
               </button>
             </div>
-
-            {selectedFiles.length > 0 ? (
-              <div className="mb-4 flex flex-wrap gap-2">
-                {selectedFiles.slice(0, 6).map((filePath) => (
-                  <span
-                    key={filePath}
-                    className="rounded-full border border-[#3c3489] border-[0.5px] bg-[#252240] px-2.5 py-1 text-[10px] text-[#afa9ec]"
-                  >
-                    {filePath}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-
             <pre className="max-h-[360px] overflow-auto rounded-[10px] border border-[#252240] bg-[#141224] p-4 text-[12px] leading-6 whitespace-pre-wrap text-[#eeedfe]">
               {generatedReadme}
             </pre>
           </div>
-        ) : null}
+        )}
 
-        {/* Recent activity */}
+        {/* recent activity: live StoredRepo cards */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <p className="text-[#eeedfe] text-[16px] font-medium">Recent activity</p>
-            <button className="text-[#7f77dd] text-[12px] hover:text-[#afa9ec] transition">View All</button>
+            {/* View All links to the My READMEs page */}
+            <Link href="/MyReadmes" className="text-[#7f77dd] text-[12px] hover:text-[#afa9ec] transition">
+              View All
+            </Link>
           </div>
 
-          <div className="flex gap-3">
-
-            {/* Repo card — Done */}
-            <div className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] px-4 py-4 flex items-start justify-between w-[375px]">
-              <div className="flex-1 min-w-0">
-                <p className="text-[#eeedfe] text-[16px] font-medium mb-1">portfolio-site</p>
-                <p className="text-[#7f77dd] text-[10px] truncate w-[200px] mb-3">
-                  github.com/janedev/portfolio-site
-                </p>
-                <div className="flex gap-1.5">
-                  <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] px-2 py-0.5 rounded-full">React</span>
-                  <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] px-2 py-0.5 rounded-full">TypeScript</span>
-                  <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] px-2 py-0.5 rounded-full">Vite</span>
+          {/* Loading skeleton */}
+          {isLoadingActivity && (
+            <div className="grid grid-cols-3 gap-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] px-4 py-4 animate-pulse">
+                  <div className="h-4 bg-[#252240] rounded w-[60%] mb-2" />
+                  <div className="h-3 bg-[#252240] rounded w-[80%] mb-4" />
+                  <div className="h-3 bg-[#252240] rounded w-[40%]" />
                 </div>
-              </div>
-              <div className="flex flex-col items-end gap-2 flex-shrink-0 ml-4">
-                <span className="bg-[#9fe1cb] border border-[#085041] border-[0.5px] text-[#085041] text-[8px] font-medium px-2 py-0.5 rounded-full">Done</span>
-                <p className="text-[#7f77dd] text-[8px]">2 mins ago</p>
-                <button className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#eeedfe] text-[14px] font-medium px-3 py-1.5 rounded-[5px] hover:border-[#7f77dd] transition">
-                  View README
-                </button>
-              </div>
+              ))}
             </div>
+          )}
 
-            {/* Repo card — Processing (disabled) */}
-            <div className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] px-4 py-4 flex items-start justify-between w-[375px]">
-              <div className="flex-1 min-w-0">
-                <p className="text-[#eeedfe] text-[16px] font-medium mb-1">express-auth-api</p>
-                <p className="text-[#7f77dd] text-[10px] truncate w-[200px] mb-3">
-                  github.com/janedev/express-auth-api
-                </p>
-                <div className="flex gap-1.5">
-                  <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] px-2 py-0.5 rounded-full">Node.js</span>
-                  <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] px-2 py-0.5 rounded-full">Express</span>
-                  <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] px-2 py-0.5 rounded-full">MongoDB</span>
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-2 flex-shrink-0 ml-4">
-                <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] font-medium px-2 py-0.5 rounded-full">Processing</span>
-                <p className="text-[#7f77dd] text-[8px]">5 mins ago</p>
-                <button disabled className="bg-[#1c1a2d] border border-[#676670] border-[0.5px] text-[#676670] text-[14px] font-medium px-3 py-1.5 rounded-[5px] cursor-not-allowed">
-                  View README
-                </button>
-              </div>
+          {/* Empty state */}
+          {!isLoadingActivity && recentRepos.length === 0 && (
+            <p className="text-[#7f77dd] text-[13px]">No repos yet - generate your first README above!</p>
+          )}
+
+
+          {/* live repo cards: 3-col grid matching stat cards */}
+          {!isLoadingActivity && recentRepos.length > 0 && (
+            <div className="grid grid-cols-3 gap-3">
+              {recentRepos.map((repo) => {
+                // language tags from metadata
+                const languages: string[] = repo.Metadata?.languages?.length
+                  ? repo.Metadata.languages.slice(0, 3)
+                  : repo.Metadata?.language
+                  ? [repo.Metadata.language]
+                  : [];
+
+                const hasReadme = Boolean(repo.Readme && repo.Readme.trim());
+
+                return (
+                  <div
+                    key={repo._id}
+                    className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] px-4 py-4 flex items-start justify-between"
+                  >
+                    {/* Left: repo name, URL, language tags */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[#eeedfe] text-[16px] font-medium mb-1 truncate">{repo.Name}</p>
+                      <p className="text-[#7f77dd] text-[10px] truncate w-[200px] mb-3">
+                        {repo.RemoteUrl.replace(/^https?:\/\//, "")}
+                      </p>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {languages.map((lang) => (
+                          <span key={lang} className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] px-2 py-0.5 rounded-full">
+                            {lang}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Right: status badge, timestamp, view button */}
+                    <div className="flex flex-col items-end gap-2 flex-shrink-0 ml-4">
+                      {hasReadme ? (
+                        <span className="bg-[#9fe1cb] border border-[#085041] border-[0.5px] text-[#085041] text-[8px] font-medium px-2 py-0.5 rounded-full">
+                          Done
+                        </span>
+                      ) : (
+                        <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] font-medium px-2 py-0.5 rounded-full">
+                          No README
+                        </span>
+                      )}
+                      <p className="text-[#7f77dd] text-[8px]">{timeAgo(repo.UpdatedAt)}</p>
+                      {/* Action buttons row - View, Regenerate, Delete */}
+                      <div className="flex gap-1.5">
+                        {/* View README - loads preview inline, disabled when no README */}
+                        <button
+                          disabled={!hasReadme}
+                          onClick={() => { if (hasReadme) { setGeneratedReadme(repo.Readme); setGeneratedRepoName(repo.Name); window.scrollTo({ top: 0, behavior: "smooth" }); }}}
+                          className={`text-[11px] font-medium px-2.5 py-1.5 rounded-[5px] border border-[0.5px] transition ${
+                            hasReadme
+                              ? "bg-[#252240] border-[#3c3489] text-[#eeedfe] hover:border-[#7f77dd]"
+                              : "bg-[#1c1a2d] border-[#676670] text-[#676670] cursor-not-allowed"
+                          }`}
+                        >
+                          View
+                        </button>
+                        {/* Regenerate - re-runs /analyze and refreshes the card */}
+                        <button
+                          disabled={regeneratingId === repo._id || deletingId === repo._id}
+                          onClick={() => handleRegenerateRepo(repo)}
+                          title="Regenerate README"
+                          className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#5dcaa5] px-2.5 py-1.5 rounded-[5px] hover:border-[#5dcaa5] transition disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {regeneratingId === repo._id ? (
+                            <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                            </svg>
+                          ) : (
+                            <svg width="12" height="12" viewBox="0 0 15 15" fill="none">
+                              <path d="M13 7A6 6 0 1 1 7 1v2a4 4 0 1 0 4 4h2Z" fill="currentColor"/>
+                              <path d="M7 1l2.5 2.5L7 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          )}
+                        </button>
+                        {/* Delete - removes the repo from the DB */}
+                        <button
+                          disabled={deletingId === repo._id || regeneratingId === repo._id}
+                          onClick={() => handleDeleteRepo(repo._id)}
+                          title="Delete repo"
+                          className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#e0a4be] px-2.5 py-1.5 rounded-[5px] hover:border-[#e0a4be] transition disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {deletingId === repo._id ? (
+                            <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                            </svg>
+                          ) : (
+                            <svg width="12" height="12" viewBox="0 0 15 15" fill="none">
+                              <path d="M3 3l9 9M12 3l-9 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-
-            {/* Repo card — Done */}
-            <div className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] px-4 py-4 flex items-start justify-between w-[375px]">
-              <div className="flex-1 min-w-0">
-                <p className="text-[#eeedfe] text-[16px] font-medium mb-1">data-viz-dashboard</p>
-                <p className="text-[#7f77dd] text-[10px] truncate w-[200px] mb-3">
-                  github.com/janedev/data-viz-dashboard
-                </p>
-                <div className="flex gap-1.5">
-                  <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] px-2 py-0.5 rounded-full">Python</span>
-                  <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] px-2 py-0.5 rounded-full">Flask</span>
-                  <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] px-2 py-0.5 rounded-full">D3.js</span>
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-2 flex-shrink-0 ml-4">
-                <span className="bg-[#9fe1cb] border border-[#085041] border-[0.5px] text-[#085041] text-[8px] font-medium px-2 py-0.5 rounded-full">Done</span>
-                <p className="text-[#7f77dd] text-[8px]">Yesterday</p>
-                <button className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#eeedfe] text-[14px] font-medium px-3 py-1.5 rounded-[5px] hover:border-[#7f77dd] transition">
-                  View README
-                </button>
-              </div>
-            </div>
-
-          </div>
+          )}
         </div>
 
       </main>
-
     </div>
   );
 }

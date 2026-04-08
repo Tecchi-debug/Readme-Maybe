@@ -11,6 +11,7 @@ router.get('/github/callback', authController.githubCallback);
 router.post('/refresh', authController.refresh);
 router.post('/logout', authController.logout);
 router.get('/me', authMiddleware.authMiddleware, authController.me);
+router.get('/github/repos', authMiddleware.authMiddleware, authController.githubRepos);
 router.get('/verify/:token', authController.verifyEmail);
 
 
