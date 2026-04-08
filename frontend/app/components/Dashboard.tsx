@@ -21,6 +21,13 @@ type GithubRepo = {
   language: string | null;
 };
 
+type GeneratedReadmeResponse = {
+  message?: string;
+  readme?: string;
+  selected_files?: string[];
+  repo?: string;
+};
+
 // -------------------------------------------------------------------------
 // Main Dashboard UI
 // -------------------------------------------------------------------------
@@ -36,6 +43,9 @@ export default function Dashboard() {
   const [welcomeName, setWelcomeName] = useState("Jane");
   const [displayName, setDisplayName] = useState("Jane Doe");
   const [userInitials, setUserInitials] = useState("JD");
+  const [generatedReadme, setGeneratedReadme] = useState("");
+  const [generatedRepoName, setGeneratedRepoName] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
 
   function getStoredUserData(): StoredUserData | null {
     const userDataRaw = localStorage.getItem("user_data");
@@ -182,23 +192,6 @@ export default function Dashboard() {
       return;
     }
 
-    const userData = getStoredUserData();
-    if (!userData) {
-      setSubmitMessage("Please sign in before submitting a repo.");
-      return;
-    }
-
-    let userId = "";
-    let token = "";
-
-    userId = userData?.id || "";
-    token = userData?.token || "";
-
-    if (!userId) {
-      setSubmitMessage("Missing user id. Please sign in again.");
-      return;
-    }
-
     if (!process.env.NEXT_PUBLIC_API_URL) {
       setSubmitMessage("API URL is not configured.");
       return;
@@ -206,45 +199,38 @@ export default function Dashboard() {
 
     setIsSubmitting(true);
     setSubmitMessage("");
+    setGeneratedReadme("");
+    setGeneratedRepoName("");
+    setSelectedFiles([]);
 
     try {
-      const sendAnalyzeRequest = async (authToken: string) => (
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
+      const sendGenerateRequest = async () => (
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/readme/generate`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           },
           body: JSON.stringify({
             repoUrl: trimmedRepoUrl,
-            userId,
           }),
         })
       );
 
-      let response = await sendAnalyzeRequest(token);
-      let data = await response.json();
-
-      if (response.status === 401 && userData?.refreshToken) {
-        const nextAccessToken = await refreshAccessToken(userData);
-
-        if (nextAccessToken) {
-          response = await sendAnalyzeRequest(nextAccessToken);
-          data = await response.json();
-        }
-      }
+      const response = await sendGenerateRequest();
+      const data: GeneratedReadmeResponse = await response.json();
 
       if (!response.ok) {
-        setSubmitMessage(data?.error || "Failed to analyze repo.");
+        setSubmitMessage(data?.message || "Failed to generate README.");
         return;
       }
 
-      setSubmitMessage("Repo submitted successfully.");
-      setRepoUrl("");
-      setSelectedRepoUrl("");
+      setGeneratedReadme(data?.readme || "");
+      setGeneratedRepoName(data?.repo || "");
+      setSelectedFiles(Array.isArray(data?.selected_files) ? data.selected_files : []);
+      setSubmitMessage(data?.message || "README generated successfully.");
     } catch (error) {
       setSubmitMessage(
-        error instanceof Error ? error.message : "Failed to analyze repo."
+        error instanceof Error ? error.message : "Failed to generate README."
       );
     } finally {
       setIsSubmitting(false);
@@ -433,6 +419,43 @@ export default function Dashboard() {
             <p className="mt-2 text-[12px] text-[#afa9ec]">{submitMessage}</p>
           ) : null}
         </div>
+
+        {generatedReadme ? (
+          <div className="mb-7 rounded-[12px] border border-[#3c3489] border-[0.5px] bg-[#1c1a2e] p-5 shadow-[0_0_0_1px_rgba(60,52,137,0.1)]">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#7f77dd]">Generated README</p>
+                <h3 className="mt-2 text-[20px] font-medium text-[#eeedfe]">
+                  {generatedRepoName || "Preview"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(generatedReadme)}
+                className="rounded-[8px] border border-[#3c3489] border-[0.5px] bg-[#252240] px-3 py-2 text-[12px] text-[#eeedfe] transition hover:border-[#7f77dd]"
+              >
+                Copy Markdown
+              </button>
+            </div>
+
+            {selectedFiles.length > 0 ? (
+              <div className="mb-4 flex flex-wrap gap-2">
+                {selectedFiles.slice(0, 6).map((filePath) => (
+                  <span
+                    key={filePath}
+                    className="rounded-full border border-[#3c3489] border-[0.5px] bg-[#252240] px-2.5 py-1 text-[10px] text-[#afa9ec]"
+                  >
+                    {filePath}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
+            <pre className="max-h-[360px] overflow-auto rounded-[10px] border border-[#252240] bg-[#141224] p-4 text-[12px] leading-6 whitespace-pre-wrap text-[#eeedfe]">
+              {generatedReadme}
+            </pre>
+          </div>
+        ) : null}
 
         {/* Recent activity */}
         <div>
