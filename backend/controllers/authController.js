@@ -259,11 +259,11 @@ const verifyEmail = async (req, res) => {
         if(!user) return res.status(400).send('User not found.');
 
         // check if user is verified, if not verify them
-        if(user.isVerified){
+        if(user.EmailVerified){
             return res.send('Email is already verified');
         }
 
-        user.isVerified = true;
+        user.EmailVerified = true;
         await user.save();
 
         res.send('Email was successfully verified! You may now login.');
