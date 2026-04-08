@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const JwtSession = require('../models/JwtSession');
+const { getJwtSecret } = require('../services/secretsManager');
 
 const authMiddleware = async (req, res, next) => {
     try{
@@ -8,7 +9,7 @@ const authMiddleware = async (req, res, next) => {
         if (!token) return res.status(401).json({message: 'No token found. Authorization denied'});
 
         //verify token
-        const verToken = jwt.verify(token, process.env.JWT_SECRET);
+        const verToken = jwt.verify(token, getJwtSecret());
         if (verToken.type && verToken.type !== 'access') {
             return res.status(401).json({message: 'Access token is required'});
         }

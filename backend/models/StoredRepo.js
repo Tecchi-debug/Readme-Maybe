@@ -21,4 +21,5 @@ const storedRepoSchema = new mongoose.Schema({
 
 storedRepoSchema.index({ UserId: 1, FullName: 1 }, { unique: true });
 
-module.exports = mongoose.model('StoredRepo', storedRepoSchema);
+const StoredRepo = mongoose.model("StoredRepo",storedRepoSchema);
+module.exports = StoredRepo;

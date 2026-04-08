@@ -2,17 +2,11 @@ const express = require('express');
 const router = express.Router();
 const analyzeRepoController = require('../controllers/analyzeRepoController');
 const checkDifferenceController = require('../controllers/commitDifferenceController');
+const analyzeFileContentsController = require('../controllers/fileContentsController');
 
-
-/*router.post('/difference', async (req, res) => {
-    req.body = {
-        repoUrl: "https://github.com/Tecchi-debug/Readme-Maybe.git"
-    };
-
-    return checkDifferenceController(req, res);
-});*/
 
 router.post('/analyze',analyzeRepoController);
-//router.post('/difference',checkDifferenceController);
+router.post('/difference',checkDifferenceController);
+router.post('/contents',analyzeFileContentsController);
 
 module.exports = router;

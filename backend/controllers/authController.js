@@ -4,6 +4,8 @@ const OAuthAccount = require('../models/OAuthAccount');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const sendEmail = require('../utils/mailer');
+const { getJwtSecret } = require('../services/secretsManager');
 
 const ACCESS_TOKEN_TTL = '1h';
 const REFRESH_TOKEN_TTL = '7d';
@@ -12,11 +14,11 @@ const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 const signAccessToken = (userId, jti) => (
-    jwt.sign({id: userId, jti, type: 'access'}, process.env.JWT_SECRET, {expiresIn: ACCESS_TOKEN_TTL})
+    jwt.sign({id: userId, jti, type: 'access'}, getJwtSecret(), {expiresIn: ACCESS_TOKEN_TTL})
 );
 
 const signRefreshToken = (userId, jti) => (
-    jwt.sign({id: userId, jti, type: 'refresh'}, process.env.JWT_SECRET, {expiresIn: REFRESH_TOKEN_TTL})
+    jwt.sign({id: userId, jti, type: 'refresh'}, getJwtSecret(), {expiresIn: REFRESH_TOKEN_TTL})
 );
 
 const buildSessionMetadata = (req) => ({
@@ -279,17 +281,36 @@ const register = async (req, res) => {
 
         // create the user
         const newUser = await User.create({
-            FirstName: FirstName.trim(),
-            LastName: LastName.trim(),
-            Login: normalizedLogin,
-            Email: normalizedEmail,
-            hashedPassword
+            FirstName,
+            LastName,
+            Login,
+            Email,
+            hashedPassword,
+            isVerified: false
         });
 
+        // generate email jwt token
+        const emailToken = jwt.sign({ id: newUser._id }, getJwtSecret(), { expiresIn: '1d'});
+
+        // email url
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const url = `${baseUrl}/api/auth/verify/${emailToken}`;
+
+        // send verification email
+        await sendEmail(
+            newUser.Email,
+            'Verify your email for ReadMeMaybe',
+            `
+            <h2>Welcome to ReadMe-Maybe!</h2>
+            <p>Click below to verify your account:</p>
+            <a href="${url}">Verify Email</a>
+            `
+        );
+        
         const { accessToken, refreshToken } = await createSessionForUser(newUser._id.toString(), req);
 
         //return on success
-        res.status(201).json({jwtToken: accessToken, refreshToken, user: newUser});
+        res.status(201).json({jwtToken: accessToken, refreshToken, user: newUser, message:'User registered. Please check email to verify your account.'});
     }catch(error){
         console.error(error);
         res.status(500).json({message: 'Server Error'});
@@ -308,6 +329,7 @@ const login = async (req, res) => {
             return res.status(400).json({message: 'Invalid Email'});
         }
 
+        // check if user is verified, if not do not let them login
         if (returnUser.EmailVerified === false) {
             return res.status(400).json({message: 'Please verify your email before logging in'});
         }
@@ -464,7 +486,7 @@ const refresh = async (req, res) => {
             return res.status(400).json({message: 'Refresh token is required'});
         }
 
-        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+        const decoded = jwt.verify(refreshToken, getJwtSecret());
         if (decoded.type !== 'refresh' || !decoded.jti) {
             return res.status(401).json({message: 'Refresh token is not valid'});
         }
@@ -507,7 +529,7 @@ const logout = async (req, res) => {
             return res.status(400).json({message: 'Token is required'});
         }
 
-        const decoded = jwt.verify(tokenToInspect, process.env.JWT_SECRET);
+        const decoded = jwt.verify(tokenToInspect, getJwtSecret());
         if (!decoded.jti) {
             return res.status(400).json({message: 'Session id missing from token'});
         }
@@ -526,6 +548,7 @@ const logout = async (req, res) => {
 
 const me = async(req, res) => {
     try{
+        // get the user
         const user = await User.findById(req.user.id).select('-hashedPassword');
         if (!user) return res.status(400).json({message:'User not found.'});
         res.status(200).json(user);
@@ -535,4 +558,34 @@ const me = async(req, res) => {
     }
 };
 
-module.exports = {register, login, githubStart, githubCallback, githubRepos, refresh, logout, me};
+const verifyEmail = async (req, res) => {
+    try{
+        // get email jwt token
+        const { token } = req.params;
+
+        if(!token){
+            return res.status(400).send('Invalid verification link.');
+        }
+
+        // decode the token and get the user
+        const decode = jwt.verify(token, getJwtSecret());
+        const user = await User.findById(decode.id);
+
+        if(!user) return res.status(400).send('User not found.');
+
+        // check if user is verified, if not verify them
+        if(user.EmailVerified){
+            return res.send('Email is already verified');
+        }
+
+        user.EmailVerified = true;
+        await user.save();
+
+        res.send('Email was successfully verified! You may now login.');
+    } catch(err){
+        console.error(err);
+        res.status(400).send('Invalid verification link');
+    }
+};
+
+module.exports = {register, login, refresh, logout, me, verifyEmail};
