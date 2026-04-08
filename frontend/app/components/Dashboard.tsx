@@ -1,7 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+type StoredUserData = {
+  id?: string;
+  token?: string;
+  refreshToken?: string;
+  firstName?: string;
+  lastName?: string;
+};
+
+type GithubRepo = {
+  id: number;
+  name: string;
+  fullName: string;
+  htmlUrl: string;
+  private: boolean;
+  visibility: string;
+  language: string | null;
+};
+
+type GeneratedReadmeResponse = {
+  message?: string;
+  readme?: string;
+  selected_files?: string[];
+  repo?: string;
+};
 
 // -------------------------------------------------------------------------
 // Main Dashboard UI
@@ -9,8 +34,125 @@ import { useState } from "react";
 
 export default function Dashboard() {
   const [repoUrl, setRepoUrl] = useState("");
+  const [selectedRepoUrl, setSelectedRepoUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
+  const [githubRepos, setGithubRepos] = useState<GithubRepo[]>([]);
+  const [isLoadingRepos, setIsLoadingRepos] = useState(true);
+  const [reposMessage, setReposMessage] = useState("");
+  const [welcomeName, setWelcomeName] = useState("Jane");
+  const [displayName, setDisplayName] = useState("Jane Doe");
+  const [userInitials, setUserInitials] = useState("JD");
+  const [generatedReadme, setGeneratedReadme] = useState("");
+  const [generatedRepoName, setGeneratedRepoName] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+
+  function getStoredUserData(): StoredUserData | null {
+    const userDataRaw = localStorage.getItem("user_data");
+    if (!userDataRaw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(userDataRaw);
+    } catch {
+      return null;
+    }
+  }
+
+  useEffect(() => {
+    const userData = getStoredUserData();
+
+    if (userData?.firstName || userData?.lastName) {
+      const firstName = userData?.firstName || "User";
+      const lastName = userData?.lastName || "";
+      const initials = `${firstName.charAt(0)}${lastName.charAt(0) || firstName.charAt(1) || ""}`.toUpperCase();
+
+      setWelcomeName(firstName);
+      setDisplayName(`${firstName} ${lastName}`.trim());
+      setUserInitials(initials || "RM");
+    }
+
+    if (!userData?.token) {
+      setIsLoadingRepos(false);
+      setReposMessage("Sign in with GitHub to load your repos.");
+      return;
+    }
+
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setIsLoadingRepos(false);
+      setReposMessage("API URL is not configured.");
+      return;
+    }
+
+    let ignore = false;
+
+    async function loadGithubRepos(): Promise<void> {
+      setIsLoadingRepos(true);
+      setReposMessage("");
+
+      const sendRepoRequest = async (authToken: string) => (
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/github/repos`, {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        })
+      );
+
+      try {
+        let response = await sendRepoRequest(userData?.token || "");
+        let data = await response.json();
+
+        if (response.status === 401 && userData?.refreshToken) {
+          const nextAccessToken = await refreshAccessToken(userData);
+
+          if (nextAccessToken) {
+            response = await sendRepoRequest(nextAccessToken);
+            data = await response.json();
+          }
+        }
+
+        if (!response.ok) {
+          if (!ignore) {
+            setGithubRepos([]);
+            setReposMessage(data?.message || "Couldn't load your GitHub repos.");
+          }
+          return;
+        }
+
+        if (!ignore) {
+          const repos = Array.isArray(data?.repos) ? data.repos : [];
+          setGithubRepos(repos);
+
+          if (repos.length === 0) {
+            setReposMessage("No GitHub repos available yet.");
+          }
+        }
+      } catch (error) {
+        if (!ignore) {
+          setGithubRepos([]);
+          setReposMessage(
+            error instanceof Error ? error.message : "Couldn't load your GitHub repos."
+          );
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingRepos(false);
+        }
+      }
+    }
+
+    void loadGithubRepos();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const isRepoMessageError =
+    reposMessage.toLowerCase().includes("couldn't") ||
+    reposMessage.toLowerCase().includes("sign in") ||
+    reposMessage.toLowerCase().includes("not configured") ||
+    reposMessage.toLowerCase().includes("failed") ||
+    reposMessage.toLowerCase().includes("not connected");
 
   async function refreshAccessToken(userData: any): Promise<string> {
     const refreshToken = userData?.refreshToken || "";
@@ -50,30 +192,6 @@ export default function Dashboard() {
       return;
     }
 
-    const userDataRaw = localStorage.getItem("user_data");
-    if (!userDataRaw) {
-      setSubmitMessage("Please sign in before submitting a repo.");
-      return;
-    }
-
-    let userId = "";
-    let token = "";
-    let userData: any = null;
-
-    try {
-      userData = JSON.parse(userDataRaw);
-      userId = userData?.id || "";
-      token = userData?.token || "";
-    } catch {
-      setSubmitMessage("Session data is invalid. Please sign in again.");
-      return;
-    }
-
-    if (!userId) {
-      setSubmitMessage("Missing user id. Please sign in again.");
-      return;
-    }
-
     if (!process.env.NEXT_PUBLIC_API_URL) {
       setSubmitMessage("API URL is not configured.");
       return;
@@ -81,44 +199,38 @@ export default function Dashboard() {
 
     setIsSubmitting(true);
     setSubmitMessage("");
+    setGeneratedReadme("");
+    setGeneratedRepoName("");
+    setSelectedFiles([]);
 
     try {
-      const sendAnalyzeRequest = async (authToken: string) => (
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
+      const sendGenerateRequest = async () => (
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/readme/generate`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           },
           body: JSON.stringify({
             repoUrl: trimmedRepoUrl,
-            userId,
           }),
         })
       );
 
-      let response = await sendAnalyzeRequest(token);
-      let data = await response.json();
-
-      if (response.status === 401 && userData?.refreshToken) {
-        const nextAccessToken = await refreshAccessToken(userData);
-
-        if (nextAccessToken) {
-          response = await sendAnalyzeRequest(nextAccessToken);
-          data = await response.json();
-        }
-      }
+      const response = await sendGenerateRequest();
+      const data: GeneratedReadmeResponse = await response.json();
 
       if (!response.ok) {
-        setSubmitMessage(data?.error || "Failed to analyze repo.");
+        setSubmitMessage(data?.message || "Failed to generate README.");
         return;
       }
 
-      setSubmitMessage("Repo submitted successfully.");
-      setRepoUrl("");
+      setGeneratedReadme(data?.readme || "");
+      setGeneratedRepoName(data?.repo || "");
+      setSelectedFiles(Array.isArray(data?.selected_files) ? data.selected_files : []);
+      setSubmitMessage(data?.message || "README generated successfully.");
     } catch (error) {
       setSubmitMessage(
-        error instanceof Error ? error.message : "Failed to analyze repo."
+        error instanceof Error ? error.message : "Failed to generate README."
       );
     } finally {
       setIsSubmitting(false);
@@ -190,10 +302,10 @@ export default function Dashboard() {
         {/* User footer */}
         <div className="flex items-center gap-3 px-5 py-4 border-t border-[#252240]">
           <div className="flex items-center justify-center w-[30px] h-[30px] rounded-full bg-[#534ab7] text-[#eeedfe] text-[12px] font-medium flex-shrink-0">
-            JD
+            {userInitials}
           </div>
           <div>
-            <p className="text-[#eeedfe] text-[13px] font-medium leading-tight">Jane Doe</p>
+            <p className="text-[#eeedfe] text-[13px] font-medium leading-tight">{displayName}</p>
           </div>
         </div>
 
@@ -208,7 +320,7 @@ export default function Dashboard() {
         <div className="flex items-start justify-between mb-7">
           <div>
             <h1 className="text-[#eeedfe] text-[24px] font-medium leading-tight">Dashboard</h1>
-            <p className="text-[#7f77dd] text-[13px] mt-1">Welcome back, Jane</p>
+            <p className="text-[#7f77dd] text-[13px] mt-1">Welcome back, {welcomeName}</p>
           </div>
         </div>
 
@@ -244,26 +356,106 @@ export default function Dashboard() {
         {/* Submit a repo */}
         <div className="mb-7">
           <p className="text-[#eeedfe] text-[16px] font-medium mb-3">Submit a repo</p>
-          <div className="flex gap-3">
-            <input
-              type="text"
-              placeholder="https://github.com/user/repo-name"
-              value={repoUrl}
-              onChange={(e) => setRepoUrl(e.target.value)}
-              className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] px-4 py-2.5 text-[#3c3489] text-[12px] placeholder:text-[#3c3489] outline-none w-[285px] focus:border-[#7f77dd] transition"
-            />
-            <button
-              onClick={handleGenerateReadme}
-              disabled={isSubmitting}
-              className="bg-[#534ab7] text-[#eeedfe] text-[14px] font-medium px-6 py-2.5 rounded-[10px] hover:bg-[#6258c4] transition active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? "Generating..." : "Generate README"}
-            </button>
+          <div className="max-w-[672px] space-y-3">
+            <div className="relative">
+              <select
+                value={selectedRepoUrl}
+                onChange={(e) => {
+                  const nextRepoUrl = e.target.value;
+                  setSelectedRepoUrl(nextRepoUrl);
+                  setRepoUrl(nextRepoUrl);
+                  setSubmitMessage("");
+                }}
+                disabled={isLoadingRepos}
+                className="w-full appearance-none rounded-[10px] border border-[#3c3489] border-[0.5px] bg-[#1c1a2e] px-4 py-3 pr-12 text-[12px] text-[#eeedfe] outline-none transition focus:border-[#7f77dd] disabled:cursor-not-allowed disabled:text-[#676670]"
+              >
+                <option value="">
+                  {isLoadingRepos ? "Loading your GitHub repos..." : "Choose one of your existing repos"}
+                </option>
+                {githubRepos.map((repo) => (
+                  <option key={repo.id} value={repo.htmlUrl}>
+                    {repo.fullName} {repo.private ? "• private" : "• public"}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[#7f77dd]">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none">
+                  <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+            </div>
+
+            {reposMessage ? (
+              <p className={`text-[12px] ${isRepoMessageError ? "text-[#e0a4be]" : "text-[#7f77dd]"}`}>
+                {reposMessage}
+              </p>
+            ) : (
+              <p className="text-[12px] text-[#7f77dd]">
+                Select a connected GitHub repo or paste a URL manually.
+              </p>
+            )}
+
+            <div className="flex gap-3">
+              <input
+                type="text"
+                placeholder="https://github.com/user/repo-name"
+                value={repoUrl}
+                onChange={(e) => {
+                  setRepoUrl(e.target.value);
+                  setSelectedRepoUrl("");
+                }}
+                className="w-[380px] rounded-[10px] border border-[#3c3489] border-[0.5px] bg-[#1c1a2e] px-4 py-2.5 text-[#eeedfe] text-[12px] placeholder:text-[#3c3489] outline-none focus:border-[#7f77dd] transition"
+              />
+              <button
+                onClick={handleGenerateReadme}
+                disabled={isSubmitting}
+                className="bg-[#534ab7] text-[#eeedfe] text-[14px] font-medium px-6 py-2.5 rounded-[10px] hover:bg-[#6258c4] transition active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? "Generating..." : "Generate README"}
+              </button>
+            </div>
           </div>
           {submitMessage ? (
             <p className="mt-2 text-[12px] text-[#afa9ec]">{submitMessage}</p>
           ) : null}
         </div>
+
+        {generatedReadme ? (
+          <div className="mb-7 rounded-[12px] border border-[#3c3489] border-[0.5px] bg-[#1c1a2e] p-5 shadow-[0_0_0_1px_rgba(60,52,137,0.1)]">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#7f77dd]">Generated README</p>
+                <h3 className="mt-2 text-[20px] font-medium text-[#eeedfe]">
+                  {generatedRepoName || "Preview"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(generatedReadme)}
+                className="rounded-[8px] border border-[#3c3489] border-[0.5px] bg-[#252240] px-3 py-2 text-[12px] text-[#eeedfe] transition hover:border-[#7f77dd]"
+              >
+                Copy Markdown
+              </button>
+            </div>
+
+            {selectedFiles.length > 0 ? (
+              <div className="mb-4 flex flex-wrap gap-2">
+                {selectedFiles.slice(0, 6).map((filePath) => (
+                  <span
+                    key={filePath}
+                    className="rounded-full border border-[#3c3489] border-[0.5px] bg-[#252240] px-2.5 py-1 text-[10px] text-[#afa9ec]"
+                  >
+                    {filePath}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
+            <pre className="max-h-[360px] overflow-auto rounded-[10px] border border-[#252240] bg-[#141224] p-4 text-[12px] leading-6 whitespace-pre-wrap text-[#eeedfe]">
+              {generatedReadme}
+            </pre>
+          </div>
+        ) : null}
 
         {/* Recent activity */}
         <div>

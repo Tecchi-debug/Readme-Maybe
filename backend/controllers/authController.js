@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const JwtSession = require('../models/JwtSession');
+const OAuthAccount = require('../models/OAuthAccount');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
@@ -25,6 +26,194 @@ const buildSessionMetadata = (req) => ({
     IpAddress: req.ip || '',
     UserAgent: req.get('user-agent') || ''
 });
+
+const getFrontendAuthRedirectBase = () => (
+    process.env.FRONTEND_APP_URL || 'http://localhost:3000/Login'
+);
+
+const signGithubState = () => (
+    jwt.sign(
+        { nonce: crypto.randomUUID(), provider: 'github' },
+        process.env.JWT_SECRET,
+        { expiresIn: '10m' }
+    )
+);
+
+const buildAuthRedirectUrl = (params) => {
+    const url = new URL(getFrontendAuthRedirectBase());
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+            url.searchParams.set(key, String(value));
+        }
+    });
+    return url.toString();
+};
+
+const splitName = (name = '', fallback = '') => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+        return { firstName: fallback || 'GitHub', lastName: 'User' };
+    }
+
+    const parts = trimmed.split(/\s+/);
+    return {
+        firstName: parts[0] || fallback || 'GitHub',
+        lastName: parts.slice(1).join(' ') || 'User'
+    };
+};
+
+const findAvailableLogin = async (baseLogin) => {
+    let candidate = baseLogin.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '') || 'github-user';
+    let suffix = 0;
+
+    while (await User.findOne({ Login: candidate })) {
+        suffix += 1;
+        candidate = `${baseLogin.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '') || 'github-user'}-${suffix}`;
+    }
+
+    return candidate;
+};
+
+const fetchGithubAccessToken = async (code) => {
+    const response = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            client_id: process.env.GITHUB_CLIENT_ID,
+            client_secret: process.env.GITHUB_CLIENT_SECRET,
+            code,
+            redirect_uri: process.env.GITHUB_CALLBACK_URL
+        })
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.access_token) {
+        throw new Error(data.error_description || 'Failed to exchange GitHub code');
+    }
+
+    return {
+        accessToken: data.access_token,
+        scopes: (data.scope || '').split(',').filter(Boolean)
+    };
+};
+
+const fetchGithubProfile = async (accessToken) => {
+    const headers = {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${accessToken}`,
+        'User-Agent': 'ReadMeMaybe'
+    };
+
+    const [userResponse, emailResponse] = await Promise.all([
+        fetch('https://api.github.com/user', { headers }),
+        fetch('https://api.github.com/user/emails', { headers })
+    ]);
+
+    const githubUser = await userResponse.json();
+    const githubEmails = await emailResponse.json();
+
+    if (!userResponse.ok) {
+        throw new Error(githubUser.message || 'Failed to fetch GitHub profile');
+    }
+
+    if (!emailResponse.ok || !Array.isArray(githubEmails)) {
+        throw new Error('Failed to fetch GitHub email addresses');
+    }
+
+    const primaryEmailRecord =
+        githubEmails.find((entry) => entry.primary && entry.verified) ||
+        githubEmails.find((entry) => entry.verified) ||
+        githubEmails[0];
+
+    if (!primaryEmailRecord?.email) {
+        throw new Error('GitHub account does not expose an email address');
+    }
+
+    return {
+        githubUser,
+        primaryEmail: primaryEmailRecord.email.toLowerCase()
+    };
+};
+
+const upsertGithubUser = async ({ githubUser, primaryEmail, accessToken, scopes = [] }) => {
+    const providerAccountId = String(githubUser.id);
+    let oauthAccount = await OAuthAccount.findOne({
+        Provider: 'github',
+        ProviderAccountId: providerAccountId
+    });
+    let user;
+
+    if (oauthAccount) {
+        user = await User.findById(oauthAccount.UserId);
+    }
+
+    if (!user) {
+        user = await User.findOne({ Email: primaryEmail });
+    }
+
+    const nameParts = splitName(githubUser.name, githubUser.login);
+
+    if (!user) {
+        const randomPlaceholderPassword = await bcrypt.hash(crypto.randomUUID(), 12);
+        user = await User.create({
+            FirstName: nameParts.firstName,
+            LastName: nameParts.lastName,
+            Login: await findAvailableLogin(githubUser.login || primaryEmail.split('@')[0]),
+            Email: primaryEmail,
+            EmailVerified: true,
+            EmailVerifiedAt: new Date(),
+            hashedPassword: randomPlaceholderPassword,
+            GithubProfile: {
+                Username: githubUser.login || '',
+                ProfileUrl: githubUser.html_url || '',
+                AvatarUrl: githubUser.avatar_url || '',
+                IsConnected: true,
+                LastSyncedAt: new Date()
+            },
+            LastLoginAt: new Date()
+        });
+    } else {
+        user.FirstName = user.FirstName || nameParts.firstName;
+        user.LastName = user.LastName || nameParts.lastName;
+        user.EmailVerified = true;
+        user.EmailVerifiedAt = user.EmailVerifiedAt || new Date();
+        user.GithubProfile = {
+            Username: githubUser.login || '',
+            ProfileUrl: githubUser.html_url || '',
+            AvatarUrl: githubUser.avatar_url || '',
+            IsConnected: true,
+            LastSyncedAt: new Date()
+        };
+        user.LastLoginAt = new Date();
+        await user.save();
+    }
+
+    const oauthPayload = {
+        UserId: user._id,
+        Provider: 'github',
+        ProviderAccountId: providerAccountId,
+        Email: primaryEmail,
+        AccessToken: accessToken,
+        Scopes: scopes,
+        Profile: githubUser,
+        LastLoginAt: new Date()
+    };
+
+    if (oauthAccount) {
+        oauthAccount.set(oauthPayload);
+        await oauthAccount.save();
+    } else {
+        oauthAccount = await OAuthAccount.create({
+            ...oauthPayload,
+            LinkedAt: new Date()
+        });
+    }
+
+    return user;
+};
 
 const createSessionForUser = async (userId, req) => {
     const now = new Date();
@@ -161,6 +350,132 @@ const login = async (req, res) => {
     }catch(error){
         console.error(error);
         res.status(500).json({message: 'Server Error'})
+    }
+};
+
+const githubStart = async (_req, res) => {
+    try {
+        if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CALLBACK_URL) {
+            return res.status(500).json({ message: 'GitHub OAuth is not configured' });
+        }
+
+        const githubUrl = new URL('https://github.com/login/oauth/authorize');
+        githubUrl.searchParams.set('client_id', process.env.GITHUB_CLIENT_ID);
+        githubUrl.searchParams.set('redirect_uri', process.env.GITHUB_CALLBACK_URL);
+        githubUrl.searchParams.set('scope', 'read:user user:email public_repo');
+        githubUrl.searchParams.set('state', signGithubState());
+
+        return res.redirect(githubUrl.toString());
+    } catch (error) {
+        console.error(error);
+        return res.redirect(buildAuthRedirectUrl({ error: 'GitHub sign-in could not be started' }));
+    }
+};
+
+const githubCallback = async (req, res) => {
+    try {
+        const { code, state } = req.query;
+        if (!code || !state) {
+            return res.redirect(buildAuthRedirectUrl({ error: 'Missing GitHub callback parameters' }));
+        }
+
+        const decodedState = jwt.verify(state, process.env.JWT_SECRET);
+        if (decodedState.provider !== 'github') {
+            return res.redirect(buildAuthRedirectUrl({ error: 'Invalid GitHub callback state' }));
+        }
+
+        if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET || !process.env.GITHUB_CALLBACK_URL) {
+            return res.redirect(buildAuthRedirectUrl({ error: 'GitHub OAuth is not configured' }));
+        }
+
+        const { accessToken, scopes } = await fetchGithubAccessToken(code);
+        const { githubUser, primaryEmail } = await fetchGithubProfile(accessToken);
+        const user = await upsertGithubUser({ githubUser, primaryEmail, accessToken, scopes });
+        const sessionTokens = await createSessionForUser(user._id.toString(), req);
+
+        return res.redirect(buildAuthRedirectUrl({
+            jwtToken: sessionTokens.accessToken,
+            refreshToken: sessionTokens.refreshToken,
+            userId: user._id.toString(),
+            firstName: user.FirstName,
+            lastName: user.LastName
+        }));
+    } catch (error) {
+        console.error(error);
+        return res.redirect(buildAuthRedirectUrl({ error: 'GitHub sign-in failed' }));
+    }
+};
+
+const githubRepos = async (req, res) => {
+    try {
+        const oauthAccount = await OAuthAccount.findOne({
+            UserId: req.user.id,
+            Provider: 'github'
+        });
+
+        if (!oauthAccount || !oauthAccount.AccessToken) {
+            return res.status(404).json({ message: 'GitHub account is not connected' });
+        }
+
+        const page = Math.max(Number.parseInt(String(req.query.page || '1'), 10) || 1, 1);
+        const perPage = Math.min(Math.max(Number.parseInt(String(req.query.per_page || '30'), 10) || 30, 1), 100);
+        const sort = ['created', 'updated', 'pushed', 'full_name'].includes(String(req.query.sort || 'updated'))
+            ? String(req.query.sort || 'updated')
+            : 'updated';
+        const direction = ['asc', 'desc'].includes(String(req.query.direction || 'desc'))
+            ? String(req.query.direction || 'desc')
+            : 'desc';
+        const visibility = ['all', 'public', 'private'].includes(String(req.query.visibility || 'all'))
+            ? String(req.query.visibility || 'all')
+            : 'all';
+
+        const githubUrl = new URL('https://api.github.com/user/repos');
+        githubUrl.searchParams.set('page', String(page));
+        githubUrl.searchParams.set('per_page', String(perPage));
+        githubUrl.searchParams.set('sort', sort);
+        githubUrl.searchParams.set('direction', direction);
+        githubUrl.searchParams.set('visibility', visibility);
+
+        const response = await fetch(githubUrl.toString(), {
+            headers: {
+                Accept: 'application/vnd.github+json',
+                Authorization: `Bearer ${oauthAccount.AccessToken}`,
+                'User-Agent': 'ReadMeMaybe'
+            }
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            return res.status(response.status).json({
+                message: data.message || 'Failed to fetch GitHub repositories',
+                scopes: oauthAccount.Scopes || []
+            });
+        }
+
+        const repos = data.map((repo) => ({
+            id: repo.id,
+            name: repo.name,
+            fullName: repo.full_name,
+            private: repo.private,
+            description: repo.description,
+            defaultBranch: repo.default_branch,
+            htmlUrl: repo.html_url,
+            cloneUrl: repo.clone_url,
+            language: repo.language,
+            visibility: repo.visibility || (repo.private ? 'private' : 'public'),
+            updatedAt: repo.updated_at,
+            pushedAt: repo.pushed_at
+        }));
+
+        return res.status(200).json({
+            repos,
+            page,
+            perPage,
+            scopes: oauthAccount.Scopes || []
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Server Error' });
     }
 };
 
