@@ -1074,6 +1074,7 @@ accepts@^2.0.0:
   version "1.0.0"
   resolved "file:backend"
   dependencies:
+    "@aws-sdk/client-lambda" "^3.883.0"
     "@aws-sdk/client-secrets-manager" "^3.883.0"
     bcryptjs "^3.0.2"
     cors "^2.8.6"
@@ -1082,6 +1083,7 @@ accepts@^2.0.0:
     jsonwebtoken "^9.0.2"
     mongodb "^7.1.0"
     mongoose "^9.3.2"
+    nodemailer "^8.0.4"
 
 baseline-browser-mapping@^2.8.3:
   version "2.10.0"
@@ -1650,6 +1652,9 @@ next@^16.1.6:
     "@next/swc-win32-arm64-msvc" "16.1.6"
     "@next/swc-win32-x64-msvc" "16.1.6"
     sharp "^0.34.4"
+
+nodemailer@^8.0.4:
+  version "8.0.5"
 
 object-assign@^4:
   version "4.1.1"

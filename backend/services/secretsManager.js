@@ -169,6 +169,7 @@ module.exports = {
     loadSecrets,
     loadAwsSecrets,
     getSecretValue,
+    getOptionalSecretValue,
     getMongoUri,
     getJwtSecret,
     getEmailConfig,

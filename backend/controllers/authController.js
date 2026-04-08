@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const sendEmail = require('../utils/mailer');
-const { getJwtSecret } = require('../services/secretsManager');
+const { getJwtSecret, getSecretValue, getOptionalSecretValue } = require('../services/secretsManager');
 
 const ACCESS_TOKEN_TTL = '1h';
 const REFRESH_TOKEN_TTL = '7d';
@@ -28,8 +28,14 @@ const buildSessionMetadata = (req) => ({
 });
 
 const getFrontendAuthRedirectBase = () => (
-    process.env.FRONTEND_APP_URL || 'http://localhost:3000/Login'
+    getOptionalSecretValue('FRONTEND_APP_URL', 'http://localhost:3000/Login')
 );
+
+const getGithubOauthConfig = () => ({
+    clientId: getSecretValue('GITHUB_CLIENT_ID'),
+    clientSecret: getSecretValue('GITHUB_CLIENT_SECRET'),
+    callbackUrl: getSecretValue('GITHUB_CALLBACK_URL')
+});
 
 const signGithubState = () => (
     jwt.sign(
@@ -76,6 +82,8 @@ const findAvailableLogin = async (baseLogin) => {
 };
 
 const fetchGithubAccessToken = async (code) => {
+    const { clientId, clientSecret, callbackUrl } = getGithubOauthConfig();
+
     const response = await fetch('https://github.com/login/oauth/access_token', {
         method: 'POST',
         headers: {
@@ -83,10 +91,10 @@ const fetchGithubAccessToken = async (code) => {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            client_id: process.env.GITHUB_CLIENT_ID,
-            client_secret: process.env.GITHUB_CLIENT_SECRET,
+            client_id: clientId,
+            client_secret: clientSecret,
             code,
-            redirect_uri: process.env.GITHUB_CALLBACK_URL
+            redirect_uri: callbackUrl
         })
     });
 
@@ -356,13 +364,11 @@ const login = async (req, res) => {
 
 const githubStart = async (_req, res) => {
     try {
-        if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CALLBACK_URL) {
-            return res.status(500).json({ message: 'GitHub OAuth is not configured' });
-        }
+        const { clientId, callbackUrl } = getGithubOauthConfig();
 
         const githubUrl = new URL('https://github.com/login/oauth/authorize');
-        githubUrl.searchParams.set('client_id', process.env.GITHUB_CLIENT_ID);
-        githubUrl.searchParams.set('redirect_uri', process.env.GITHUB_CALLBACK_URL);
+        githubUrl.searchParams.set('client_id', clientId);
+        githubUrl.searchParams.set('redirect_uri', callbackUrl);
         githubUrl.searchParams.set('scope', 'read:user user:email public_repo');
         githubUrl.searchParams.set('state', signGithubState());
 
@@ -385,9 +391,7 @@ const githubCallback = async (req, res) => {
             return res.redirect(buildAuthRedirectUrl({ error: 'Invalid GitHub callback state' }));
         }
 
-        if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET || !process.env.GITHUB_CALLBACK_URL) {
-            return res.redirect(buildAuthRedirectUrl({ error: 'GitHub OAuth is not configured' }));
-        }
+        getGithubOauthConfig();
 
         const { accessToken, scopes } = await fetchGithubAccessToken(code);
         const { githubUser, primaryEmail } = await fetchGithubProfile(accessToken);
