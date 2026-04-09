@@ -78,6 +78,18 @@ export default function MyReadmes() {
   // --- search ---
   const [search, setSearch] = useState("");
 
+  // pending repo id from ?open= URL param (resolved once repos load)
+  const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
+
+  // once repos load and a pending id is set, open that repo in the viewer
+  useEffect(() => {
+    if (pendingOpenId && repos.length > 0) {
+      const target = repos.find((r) => r._id === pendingOpenId);
+      if (target) setViewingRepo(target);
+      setPendingOpenId(null);
+    }
+  }, [pendingOpenId, repos]);
+
   // reads user session from localStorage
   function getStoredUserData(): StoredUserData | null {
     const raw = localStorage.getItem("user_data");
@@ -124,7 +136,16 @@ export default function MyReadmes() {
       setLoadError("Please sign in to view your READMEs.");
       return;
     }
-    fetchRepos(userData.token).finally(() => setIsLoading(false));
+    // load repos, then auto-open repo from ?open=<id> if present
+    fetchRepos(userData.token).finally(() => {
+      setIsLoading(false);
+      const params = new URLSearchParams(window.location.search);
+      const openId = params.get("open");
+      if (openId) {
+        // repos state may not be set yet; store the id and resolve below
+        setPendingOpenId(openId);
+      }
+    });
   }, []);
 
   // DELETE /api/repos/:id, removes from state, closes viewer if open
@@ -214,10 +235,9 @@ export default function MyReadmes() {
     <div className="flex h-screen w-full bg-[#13111e] font-mono overflow-hidden relative">
 
       {/* bg glows */}
-      <div className="pointer-events-none absolute -top-20 right-[-60px] w-[340px] h-[340px] rounded-full bg-[#1d9e75] opacity-[0.07]" />
-      <div className="pointer-events-none absolute bottom-[-80px] left-[160px] w-[300px] h-[300px] rounded-full bg-[#534ab7] opacity-[0.07]" />
-      <div className="pointer-events-none absolute bottom-[-60px] right-[80px] w-[260px] h-[260px] rounded-full bg-[#1d9e75] opacity-[0.06]" />
-      <div className="pointer-events-none absolute top-[40%] left-[-60px] w-[220px] h-[220px] rounded-full bg-[#7f77dd] opacity-[0.05]" />
+      <div className="pointer-events-none absolute -top-20 right-[-60px] w-[340px] h-[340px] rounded-full bg-[#1d9e75] opacity-[0.15]" />
+      <div className="pointer-events-none absolute bottom-[-80px] left-[160px] w-[300px] h-[300px] rounded-full bg-[#534ab7] opacity-[0.13]" />
+      <div className="pointer-events-none absolute bottom-[-60px] right-[80px] w-[260px] h-[260px] rounded-full bg-[#1d9e75] opacity-[0.2]" />
 
       {/* sidebar */}
       <aside className="flex flex-col w-[220px] flex-shrink-0 bg-[#1c1a2e] border-r border-[#252240] z-10">
@@ -352,7 +372,7 @@ export default function MyReadmes() {
                     key={repo._id}
                     onClick={() => setViewingRepo(isActive ? null : repo)}
                     className={`bg-[#1c1a2e] border border-[0.5px] rounded-[10px] px-4 py-4 flex items-start justify-between cursor-pointer transition ${
-                      isActive ? "border-[#1d9e75]" : "border-[#3c3489] hover:border-[#7f77dd]"
+                      isActive ? "border-[#1d9e75]" : "border-[#3c3489] hover:border-[#1d9e75]"
                     }`}
                   >
                     {/* Left: name, URL, language tags */}
