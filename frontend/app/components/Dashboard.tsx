@@ -641,10 +641,9 @@ export default function Dashboard() {
     <div className="flex h-screen w-full bg-[#13111e] font-mono overflow-hidden relative">
 
       {/* bg glows */}
-      <div className="pointer-events-none absolute -top-20 right-[-60px] w-[340px] h-[340px] rounded-full bg-[#1d9e75] opacity-[0.07]" />
-      <div className="pointer-events-none absolute bottom-[-80px] left-[160px] w-[300px] h-[300px] rounded-full bg-[#534ab7] opacity-[0.07]" />
-      <div className="pointer-events-none absolute bottom-[-60px] right-[80px] w-[260px] h-[260px] rounded-full bg-[#1d9e75] opacity-[0.06]" />
-      <div className="pointer-events-none absolute top-[40%] left-[-60px] w-[220px] h-[220px] rounded-full bg-[#7f77dd] opacity-[0.05]" />
+      <div className="pointer-events-none absolute -top-20 right-[-60px] w-[340px] h-[340px] rounded-full bg-[#1d9e75] opacity-[0.15]" />
+      <div className="pointer-events-none absolute bottom-[-80px] left-[160px] w-[300px] h-[300px] rounded-full bg-[#534ab7] opacity-[0.13]" />
+      <div className="pointer-events-none absolute bottom-[-60px] right-[80px] w-[260px] h-[260px] rounded-full bg-[#1d9e75] opacity-[0.2]" />
 
       {/* ----------------------------------------------------------------
           Sidebar
@@ -781,12 +780,12 @@ export default function Dashboard() {
 
         {/* submit a repo: connected repo shelf + manual URL */}
         <div className="mb-7">
-          <div className="mb-3 flex items-end justify-between gap-4">
+          <div className="mb-3 max-w-[980px] flex items-end justify-between gap-4">
             <div>
               <p className="text-[#eeedfe] text-[16px] font-medium">Submit a repo</p>
               <p className="mt-1 text-[12px] text-[#7f77dd]">Choose from your connected GitHub projects or paste a URL manually.</p>
             </div>
-            <div className="rounded-full border border-[#2f2952] bg-[#151225] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-[#7f77dd]">
+            <div className="rounded-full border border-[#2f2952] bg-[#151225] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-[#7f77dd] flex-shrink-0">
               {githubRepos.length} connected
             </div>
           </div>
@@ -799,7 +798,8 @@ export default function Dashboard() {
                     <p className="text-[11px] uppercase tracking-[0.22em] text-[#7f77dd]">Connected GitHub repos</p>
                     <p className="mt-1 text-[12px] text-[#afa9ec]">Pick a repo tile to fill the URL automatically.</p>
                   </div>
-                  <div className="w-full max-w-[250px]">
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                      <div className="w-full max-w-[250px]">
                     <input
                       type="text"
                       value={repoSearch}
@@ -807,6 +807,7 @@ export default function Dashboard() {
                       placeholder="Search owner, repo, or language"
                       className="w-full rounded-[12px] border border-[#332d59] bg-[#141125] px-3 py-2 text-[12px] text-[#eeedfe] placeholder:text-[#5c5686] outline-none transition focus:border-[#7f77dd]"
                     />
+                  </div>
                   </div>
                 </div>
 
@@ -829,7 +830,7 @@ export default function Dashboard() {
                         className={`group relative overflow-hidden rounded-[18px] border px-4 py-3 text-left transition ${
                           isActive
                             ? "border-[#7f77dd] bg-[linear-gradient(135deg,rgba(90,83,183,0.24),rgba(29,158,117,0.14))] shadow-[0_18px_40px_rgba(33,23,73,0.35)]"
-                            : "border-[#2c264b] bg-[#141125] hover:-translate-y-[1px] hover:border-[#4a4380] hover:bg-[#18142b]"
+                            : "border-[#2c264b] bg-[#141125] hover:border-[#1d9e75]"
                         }`}
                       >
                         <div className="mb-2 flex items-start justify-between gap-3">
@@ -859,10 +860,6 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
-
-                <p className={`text-[12px] ${reposMessage && isRepoMessageError ? "text-[#e0a4be]" : "text-[#7f77dd]"}`}>
-                  {reposMessage || "Use the shelf for a quick pick, or paste any public GitHub URL below."}
-                </p>
               </div>
 
               <div className="rounded-[20px] border border-[#2b2547] bg-[#131021] p-4">
@@ -1034,7 +1031,8 @@ export default function Dashboard() {
                 return (
                   <div
                     key={repo._id}
-                    className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] px-4 py-4 flex items-start justify-between"
+                    onClick={() => { window.location.href = `/MyReadmes?open=${repo._id}`; }}
+                    className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] px-4 py-4 flex items-start justify-between cursor-pointer hover:border-[#1d9e75] transition"
                   >
                     {/* Left: repo name, URL, language tags */}
                     <div className="flex-1 min-w-0">
@@ -1066,10 +1064,10 @@ export default function Dashboard() {
                       <p className="text-[#afa9ec] text-[8px]">v{generationNumber}</p>
                       {/* Action buttons row - View, Regenerate, Delete */}
                       <div className="flex gap-1.5">
-                        {/* View README - loads preview inline, disabled when no README */}
+                        {/* View README - navigates to MyReadmes with this repo expanded */}
                         <button
                           disabled={!hasReadme}
-                          onClick={() => { if (hasReadme) { setGeneratedReadme(repo.Readme); setGeneratedRepoName(repo.Name); window.scrollTo({ top: 0, behavior: "smooth" }); }}}
+                          onClick={(e) => { e.stopPropagation(); if (hasReadme) window.location.href = `/MyReadmes?open=${repo._id}`; }}
                           className={`text-[11px] font-medium px-2.5 py-1.5 rounded-[5px] border border-[0.5px] transition ${
                             hasReadme
                               ? "bg-[#252240] border-[#3c3489] text-[#eeedfe] hover:border-[#7f77dd]"
@@ -1081,7 +1079,7 @@ export default function Dashboard() {
                         {/* Regenerate - re-runs /analyze and refreshes the card */}
                         <button
                           disabled={regeneratingId === repo._id || deletingId === repo._id}
-                          onClick={() => handleRegenerateRepo(repo)}
+                          onClick={(e) => { e.stopPropagation(); handleRegenerateRepo(repo); }}
                           title="Regenerate README"
                           className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#5dcaa5] px-2.5 py-1.5 rounded-[5px] hover:border-[#5dcaa5] transition disabled:opacity-40 disabled:cursor-not-allowed"
                         >
@@ -1100,7 +1098,7 @@ export default function Dashboard() {
                         {/* Delete - removes the repo from the DB */}
                         <button
                           disabled={deletingId === repo._id || regeneratingId === repo._id}
-                          onClick={() => handleDeleteRepo(repo._id)}
+                          onClick={(e) => { e.stopPropagation(); handleDeleteRepo(repo._id); }}
                           title="Delete repo"
                           className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#e0a4be] px-2.5 py-1.5 rounded-[5px] hover:border-[#e0a4be] transition disabled:opacity-40 disabled:cursor-not-allowed"
                         >

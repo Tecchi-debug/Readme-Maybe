@@ -91,10 +91,9 @@ export default function AboutUs() {
     <div className="flex h-screen w-full bg-[#13111e] font-mono overflow-hidden relative">
 
       {/* bg glows */}
-      <div className="pointer-events-none absolute -top-20 right-[-60px] w-[340px] h-[340px] rounded-full bg-[#1d9e75] opacity-[0.07]" />
-      <div className="pointer-events-none absolute bottom-[-80px] left-[160px] w-[300px] h-[300px] rounded-full bg-[#534ab7] opacity-[0.07]" />
-      <div className="pointer-events-none absolute bottom-[-60px] right-[80px] w-[260px] h-[260px] rounded-full bg-[#1d9e75] opacity-[0.06]" />
-      <div className="pointer-events-none absolute top-[40%] left-[-60px] w-[220px] h-[220px] rounded-full bg-[#7f77dd] opacity-[0.05]" />
+      <div className="pointer-events-none absolute -top-20 right-[-60px] w-[340px] h-[340px] rounded-full bg-[#1d9e75] opacity-[0.15]" />
+      <div className="pointer-events-none absolute bottom-[-80px] left-[160px] w-[300px] h-[300px] rounded-full bg-[#534ab7] opacity-[0.13]" />
+      <div className="pointer-events-none absolute bottom-[-60px] right-[80px] w-[260px] h-[260px] rounded-full bg-[#1d9e75] opacity-[0.2]" />
 
       {/* sidebar */}
       <aside className="relative z-10 flex flex-col w-[220px] flex-shrink-0 bg-[#1c1a2e] border-r border-[#252240]">
