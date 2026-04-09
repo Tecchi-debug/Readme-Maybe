@@ -9,7 +9,15 @@ const { loadSecrets, getSecretValue, getMongoUri, getAppPort, getSecretsDebugInf
 
 const app = express();
 const startedAt = new Date();
-app.use(cors());
+
+// CORS configuration - must be applied BEFORE routes
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+    credentials: false
+}));
+
 app.use(express.json());
 app.set('trust proxy', 1);
 
@@ -67,20 +75,6 @@ mongoose.connection.on('disconnected', () => {
 
 mongoose.connection.on('error', (error) => {
     console.error(JSON.stringify({ level: 'error', event: 'mongo_error', message: error.message }));
-});
-
-
-app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader(
-        'Access-Control-Allow-Headers',
-        'Origin, X-Requested-With, Content-Type, Accept, Authorization'
-    );
-    res.setHeader(
-        'Access-Control-Allow-Methods',
-        'GET, POST, PATCH, DELETE, OPTIONS'
-    );
-    next();
 });
 
 app.get('/healthz', (req, res) => {

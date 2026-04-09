@@ -12,7 +12,7 @@ let loadedAt = null;
 let loadedSource = null;
 
 const SECRET_REGION = process.env.AWS_REGION || 'us-east-2';
-const SECRET_ID = process.env.AWS_SECRET_ID || 'prod/readmemaybe/app';
+const SECRET_ID = process.env.AWS_SECRET_ID || 'prod/readmemaybe/database';
 const LOCAL_SECRET_KEYS = [
     'MONGODB_URI',
     'JWT_SECRET',
