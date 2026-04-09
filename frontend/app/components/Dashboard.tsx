@@ -616,7 +616,8 @@ export default function Dashboard() {
         return;
       }
 
-      if (!data?.Readme || !String(data.Readme).trim()) {
+      const nextReadme = extractReadme(data);
+      if (!nextReadme) {
         setSubmitMessage(`Regeneration completed for ${repo.Name}, but no README content was returned.`);
         return;
       }
