@@ -23,6 +23,9 @@ type StoredRepo = {
   FullName: string;
   RemoteUrl: string;
   Readme: string;
+  GenerationNumber?: number;
+  Sha?: string;
+  regenerationMode?: string;
   IsPrivate: boolean;
   Metadata: {
     languages?: string[];
@@ -63,6 +66,7 @@ export default function MyReadmes() {
   const [repos, setRepos] = useState<StoredRepo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
 
   // --- viewer: repo whose README is open in the right panel ---
   const [viewingRepo, setViewingRepo] = useState<StoredRepo | null>(null);
@@ -83,12 +87,26 @@ export default function MyReadmes() {
 
   // GET /api/repos and sets repo list state
   async function fetchRepos(token: string): Promise<void> {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) { setLoadError("Couldn't load your READMEs."); return; }
-    const data = await res.json();
-    setRepos(data.repos ?? []);
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
+
+    try {
+      const res = await fetch(`${baseUrl}/api/repos`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        setLoadError("Couldn't load your READMEs.");
+        return;
+      }
+
+      const data = await res.json();
+      setLoadError("");
+      setRepos(data.repos ?? []);
+    } catch {
+      setLoadError(
+        `Cannot reach backend at ${baseUrl}. Make sure the backend server is running and NEXT_PUBLIC_API_URL is correct.`
+      );
+    }
   }
 
   // on mount: set user info and load repos
@@ -130,8 +148,18 @@ export default function MyReadmes() {
   // re-runs /analyze, updates list + viewer if open
   async function handleRegenerate(repo: StoredRepo): Promise<void> {
     const userData = getStoredUserData();
-    if (!userData?.id || !userData?.token) return;
+    if (!userData?.id || !userData?.token) {
+      setActionMessage("Please sign in before regenerating.");
+      return;
+    }
+
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setActionMessage("API URL is not configured.");
+      return;
+    }
+
     setRegeneratingId(repo._id);
+    setActionMessage("");
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
         method: "POST",
@@ -139,12 +167,32 @@ export default function MyReadmes() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${userData.token}`,
         },
-        body: JSON.stringify({ repoUrl: repo.RemoteUrl, userId: userData.id }),
+        body: JSON.stringify({
+          repoUrl: repo.RemoteUrl,
+          userId: userData.id,
+          regenerationMode: "auto",
+          baseSha: repo.Sha || "",
+        }),
       });
       const data = await res.json();
-      if (!res.ok) return;
+      if (!res.ok) {
+        setActionMessage(data?.error || data?.message || `Failed to regenerate ${repo.Name}.`);
+        return;
+      }
+
+      if (!data?.Readme || !String(data.Readme).trim()) {
+        setActionMessage(`Regeneration completed for ${repo.Name}, but no README content was returned.`);
+        return;
+      }
+
       setRepos((prev) => prev.map((r) => r._id === data._id ? data : r));
       if (viewingRepo?._id === data._id) setViewingRepo(data);
+      const version = Number(data?.GenerationNumber || 0);
+      setActionMessage(
+        `Regenerated ${repo.Name}${version > 0 ? ` to v${version}` : ""} successfully.`
+      );
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : `Failed to regenerate ${repo.Name}.`);
     } finally {
       setRegeneratingId(null);
     }
@@ -269,6 +317,10 @@ export default function MyReadmes() {
             <p className="text-[#e0a4be] text-[13px]">{loadError}</p>
           )}
 
+          {!isLoading && !loadError && actionMessage && (
+            <p className="text-[#afa9ec] text-[13px] mb-3">{actionMessage}</p>
+          )}
+
           {/* Empty state */}
           {!isLoading && !loadError && repos.length === 0 && (
             <div className="flex flex-col items-center justify-center flex-1 gap-3 text-center pt-16">
@@ -291,6 +343,7 @@ export default function MyReadmes() {
               {filtered.map((repo) => {
                 const hasReadme = Boolean(repo.Readme?.trim());
                 const isActive = viewingRepo?._id === repo._id;
+                const generationNumber = Math.max(0, Number(repo.GenerationNumber || 0));
                 const languages: string[] = repo.Metadata?.languages?.length
                   ? repo.Metadata.languages.slice(0, 3)
                   : repo.Metadata?.language ? [repo.Metadata.language] : [];
@@ -327,6 +380,7 @@ export default function MyReadmes() {
                         : <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] font-medium px-2 py-0.5 rounded-full">No README</span>
                       }
                       <p className="text-[#7f77dd] text-[8px]">{timeAgo(repo.UpdatedAt)}</p>
+                      <p className="text-[#afa9ec] text-[8px]">v{generationNumber}</p>
                       <div className="flex gap-1.5">
                         {/* View - opens README in the right panel */}
                         <button
@@ -371,6 +425,7 @@ export default function MyReadmes() {
               <div className="min-w-0">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-[#7f77dd] mb-0.5">README</p>
                 <h2 className="text-[#eeedfe] text-[16px] font-medium truncate">{viewingRepo.Name}</h2>
+                <p className="text-[#afa9ec] text-[10px]">Version v{Math.max(0, Number(viewingRepo.GenerationNumber || 0))}</p>
                 <a href={viewingRepo.RemoteUrl} target="_blank" rel="noopener noreferrer" className="text-[#7f77dd] text-[10px] hover:text-[#afa9ec] transition">
                   {viewingRepo.RemoteUrl.replace(/^https?:\/\//, "")} ↗
                 </a>

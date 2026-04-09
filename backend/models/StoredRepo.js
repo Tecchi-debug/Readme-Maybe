@@ -9,6 +9,7 @@ const storedRepoSchema = new mongoose.Schema({
     RemoteUrl: { type: String, default: '' },
     DefaultBranch: { type: String, default: 'main', trim: true },
     Readme: { type: String, default: '' },
+    GenerationNumber: { type: Number, default: 0 },
     ReadmePath: { type: String, default: '' },
     Sha: { type: String, required: true, index: true },
     DiffFileApiUrl: { type: String, default: '' },

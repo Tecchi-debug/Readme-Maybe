@@ -34,6 +34,9 @@ type StoredRepo = {
   FullName: string;
   RemoteUrl: string;
   Readme: string;
+  GenerationNumber?: number;
+  Sha?: string;
+  regenerationMode?: string;
   Metadata: {
     languages?: string[];
     language?: string;
@@ -260,7 +263,7 @@ export default function Dashboard() {
           "Content-Type": "application/json",
           ...(userData.token ? { Authorization: `Bearer ${userData.token}` } : {}),
         },
-        body: JSON.stringify({ repoUrl: trimmedUrl }),
+        body: JSON.stringify({ repoUrl: trimmedUrl, userId: userData.id, regenerationMode: "auto" }),
       });
 
       const data = await res.json();
@@ -273,12 +276,32 @@ export default function Dashboard() {
       }
 
       // Show the inline preview
-      setGeneratedReadme(nextReadme);
-      setGeneratedRepoName(extractGeneratedRepoName(data, trimmedUrl));
-      setSubmitMessage("README generated successfully.");
-      setRecentRepos((prev) => prev.map((repo) => (
-        repo.RemoteUrl === trimmedUrl ? { ...repo, Readme: nextReadme, UpdatedAt: new Date().toISOString() } : repo
-      )));
+      setGeneratedReadme(data?.Readme || "");
+      setGeneratedRepoName(data?.Name || data?.FullName || "");
+      const modeLabel = data?.regenerationMode === "past-version-regeneration"
+        ? "(past-version regeneration)"
+        : data?.regenerationMode === "same-version-regeneration"
+        ? "(same-version regeneration)"
+        : "";
+      setSubmitMessage(`README generated successfully ${modeLabel}`.trim());
+
+      // prepend returned repo immediately, then confirm with a refetch
+      if (data?._id) {
+        setRecentRepos((prev) => {
+          const filtered = prev.filter((r) => r._id !== data._id);
+          return [data, ...filtered].slice(0, 3);
+        });
+      }
+
+      // refetch to keep counts accurate
+      const statsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos`, {
+        headers: userData.token ? { Authorization: `Bearer ${userData.token}` } : {},
+      });
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        setStats(statsData.stats ?? stats);
+        setRecentRepos((statsData.repos ?? []).slice(0, 3));
+      }
     } catch (err) {
       setSubmitMessage(err instanceof Error ? err.message : "Failed to generate README.");
     } finally {
@@ -333,9 +356,18 @@ export default function Dashboard() {
   // re-runs /readme/generate for a card and updates the preview immediately
   async function handleRegenerateRepo(repo: StoredRepo): Promise<void> {
     const userData = getStoredUserData();
-    if (!process.env.NEXT_PUBLIC_API_URL) return;
+    if (!userData?.id) {
+      setSubmitMessage("Please sign in before regenerating.");
+      return;
+    }
+
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setSubmitMessage("API URL is not configured.");
+      return;
+    }
 
     setRegeneratingId(repo._id);
+    setSubmitMessage("");
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/readme/generate`, {
         method: "POST",
@@ -343,29 +375,49 @@ export default function Dashboard() {
           "Content-Type": "application/json",
           ...(userData.token ? { Authorization: `Bearer ${userData.token}` } : {}),
         },
-        body: JSON.stringify({ repoUrl: repo.RemoteUrl }),
+        body: JSON.stringify({
+          repoUrl: repo.RemoteUrl,
+          userId: userData.id,
+          regenerationMode: "auto",
+          baseSha: repo.Sha || "",
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setSubmitMessage(data?.error || data?.message || "Failed to generate README.");
+        setSubmitMessage(data?.error || data?.message || `Failed to regenerate ${repo.Name}.`);
         return;
       }
 
-      const nextReadme = extractReadme(data);
-      if (!nextReadme) {
-        setSubmitMessage(extractReadmeFailureReason(data, repo.Name));
+      if (!data?.Readme || !String(data.Readme).trim()) {
+        setSubmitMessage(`Regeneration completed for ${repo.Name}, but no README content was returned.`);
         return;
       }
 
       // show updated preview
-      setGeneratedReadme(nextReadme);
-      setGeneratedRepoName(extractGeneratedRepoName(data, repo.Name));
-      setSubmitMessage("README generated successfully.");
-      setRecentRepos((prev) => prev.map((entry) => (
-        entry._id === repo._id
-          ? { ...entry, Readme: nextReadme, UpdatedAt: new Date().toISOString() }
-          : entry
-      )));
+      setGeneratedReadme(data?.Readme || "");
+      setGeneratedRepoName(data?.Name || data?.FullName || "");
+      const version = Number(data?.GenerationNumber || 0);
+      setSubmitMessage(
+        `Regenerated ${repo.Name}${version > 0 ? ` to v${version}` : ""} successfully.`
+      );
+
+      // prepend updated repo then refresh
+      if (data?._id) {
+        setRecentRepos((prev) => {
+          const filtered = prev.filter((r) => r._id !== data._id);
+          return [data, ...filtered].slice(0, 3);
+        });
+      }
+      const statsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos`, {
+        headers: userData.token ? { Authorization: `Bearer ${userData.token}` } : {},
+      });
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        setStats(statsData.stats ?? stats);
+        setRecentRepos((statsData.repos ?? []).slice(0, 3));
+      }
+    } catch (err) {
+      setSubmitMessage(err instanceof Error ? err.message : `Failed to regenerate ${repo.Name}.`);
     } finally {
       setRegeneratingId(null);
     }
@@ -637,7 +689,7 @@ export default function Dashboard() {
                   : [];
 
                 const hasReadme = Boolean(repo.Readme && repo.Readme.trim());
-                const failureReason = repo.Metadata?.readmeFailureReason || "No README content was generated. Try regenerate.";
+                const generationNumber = Math.max(0, Number(repo.GenerationNumber || 0));
 
                 return (
                   <div
@@ -671,6 +723,7 @@ export default function Dashboard() {
                         </span>
                       )}
                       <p className="text-[#7f77dd] text-[8px]">{timeAgo(repo.UpdatedAt)}</p>
+                      <p className="text-[#afa9ec] text-[8px]">v{generationNumber}</p>
                       {/* Action buttons row - View, Regenerate, Delete */}
                       <div className="flex gap-1.5">
                         {/* View README - loads preview inline, disabled when no README */}
