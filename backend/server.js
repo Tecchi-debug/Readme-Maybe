@@ -48,6 +48,7 @@ let client;
 
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
+app.use('/readme', readmeRoutes);
 
 async function initDatabase() {
     const mongoUri = await getMongoUri();
@@ -201,4 +202,3 @@ process.on('uncaughtException', (error) => {
 });
 
 startServer();
-

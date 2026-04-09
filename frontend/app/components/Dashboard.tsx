@@ -37,6 +37,8 @@ type StoredRepo = {
   Metadata: {
     languages?: string[];
     language?: string;
+    readmeFailureReason?: string;
+    readmeStatus?: string;
   };
   UpdatedAt: string;
   CreatedAt: string;
@@ -48,6 +50,36 @@ type DashboardStats = {
   totalRepos: number;
   thisWeekCount: number;
 };
+
+function extractReadme(data: unknown): string {
+  if (!data || typeof data !== "object") return "";
+  const record = data as { Readme?: string; readme?: string };
+  const value = record.Readme ?? record.readme ?? "";
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function extractGeneratedRepoName(data: unknown, fallback = ""): string {
+  if (!data || typeof data !== "object") return fallback;
+  const record = data as { Name?: string; FullName?: string; repo?: string };
+  return record.Name || record.FullName || record.repo || fallback;
+}
+
+function extractReadmeFailureReason(data: unknown, repoName = "this repository"): string {
+  if (data && typeof data === "object") {
+    const record = data as {
+      Metadata?: { readmeFailureReason?: string };
+      metadata?: { readmeFailureReason?: string };
+      error?: string;
+      message?: string;
+    };
+    const metadataReason = record.Metadata?.readmeFailureReason || record.metadata?.readmeFailureReason;
+    if (metadataReason) return metadataReason;
+    if (record.error) return record.error;
+    if (record.message) return record.message;
+  }
+
+  return `No README content was found for ${repoName}.`;
+}
 
 // -------------------------------------------------------------------------
 // Helpers
@@ -207,8 +239,7 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, []);
 
-
-  // POST to /analyze, saves result, shows preview, refreshes stats
+  // POST to /readme/generate, shows preview, surfaces Lambda pipeline errors
   async function handleGenerateReadme(): Promise<void> {
     const trimmedUrl = repoUrl.trim();
     if (!trimmedUrl) { setSubmitMessage("Please enter a GitHub repo URL."); return; }
@@ -223,40 +254,31 @@ export default function Dashboard() {
     setGeneratedRepoName("");
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/readme/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(userData.token ? { Authorization: `Bearer ${userData.token}` } : {}),
         },
-        body: JSON.stringify({ repoUrl: trimmedUrl, userId: userData.id }),
+        body: JSON.stringify({ repoUrl: trimmedUrl }),
       });
 
       const data = await res.json();
       if (!res.ok) { setSubmitMessage(data?.error || data?.message || "Failed to generate README."); return; }
 
+      const nextReadme = extractReadme(data);
+      if (!nextReadme) {
+        setSubmitMessage(extractReadmeFailureReason(data, "this repository"));
+        return;
+      }
+
       // Show the inline preview
-      setGeneratedReadme(data?.Readme || "");
-      setGeneratedRepoName(data?.Name || data?.FullName || "");
+      setGeneratedReadme(nextReadme);
+      setGeneratedRepoName(extractGeneratedRepoName(data, trimmedUrl));
       setSubmitMessage("README generated successfully.");
-
-      // prepend returned repo immediately, then confirm with a refetch
-      if (data?._id) {
-        setRecentRepos((prev) => {
-          const filtered = prev.filter((r) => r._id !== data._id);
-          return [data, ...filtered].slice(0, 3);
-        });
-      }
-
-      // refetch to keep counts accurate
-      const statsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos`, {
-        headers: userData.token ? { Authorization: `Bearer ${userData.token}` } : {},
-      });
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
-        setStats(statsData.stats ?? stats);
-        setRecentRepos((statsData.repos ?? []).slice(0, 3));
-      }
+      setRecentRepos((prev) => prev.map((repo) => (
+        repo.RemoteUrl === trimmedUrl ? { ...repo, Readme: nextReadme, UpdatedAt: new Date().toISOString() } : repo
+      )));
     } catch (err) {
       setSubmitMessage(err instanceof Error ? err.message : "Failed to generate README.");
     } finally {
@@ -268,6 +290,12 @@ export default function Dashboard() {
   const isRepoMessageError = reposMessage.toLowerCase().includes("couldn't") ||
     reposMessage.toLowerCase().includes("sign in") ||
     reposMessage.toLowerCase().includes("failed");
+
+  const isSubmitMessageError = submitMessage.toLowerCase().includes("failed") ||
+    submitMessage.toLowerCase().includes("no readme") ||
+    submitMessage.toLowerCase().includes("please") ||
+    submitMessage.toLowerCase().includes("sign in") ||
+    submitMessage.toLowerCase().includes("not configured");
 
   // DELETE /api/repos/:id, removes from state, refreshes stats
   async function handleDeleteRepo(repoId: string): Promise<void> {
@@ -302,43 +330,42 @@ export default function Dashboard() {
     }
   }
 
-  // re-runs /analyze for a card, bumps UpdatedAt, refreshes list
+  // re-runs /readme/generate for a card and updates the preview immediately
   async function handleRegenerateRepo(repo: StoredRepo): Promise<void> {
     const userData = getStoredUserData();
-    if (!userData?.id || !process.env.NEXT_PUBLIC_API_URL) return;
+    if (!process.env.NEXT_PUBLIC_API_URL) return;
 
     setRegeneratingId(repo._id);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/readme/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(userData.token ? { Authorization: `Bearer ${userData.token}` } : {}),
         },
-        body: JSON.stringify({ repoUrl: repo.RemoteUrl, userId: userData.id }),
+        body: JSON.stringify({ repoUrl: repo.RemoteUrl }),
       });
       const data = await res.json();
-      if (!res.ok) return;
+      if (!res.ok) {
+        setSubmitMessage(data?.error || data?.message || "Failed to generate README.");
+        return;
+      }
+
+      const nextReadme = extractReadme(data);
+      if (!nextReadme) {
+        setSubmitMessage(extractReadmeFailureReason(data, repo.Name));
+        return;
+      }
 
       // show updated preview
-      setGeneratedReadme(data?.Readme || "");
-      setGeneratedRepoName(data?.Name || data?.FullName || "");
-
-      // prepend updated repo then refresh
-      if (data?._id) {
-        setRecentRepos((prev) => {
-          const filtered = prev.filter((r) => r._id !== data._id);
-          return [data, ...filtered].slice(0, 3);
-        });
-      }
-      const statsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos`, {
-        headers: userData.token ? { Authorization: `Bearer ${userData.token}` } : {},
-      });
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
-        setStats(statsData.stats ?? stats);
-        setRecentRepos((statsData.repos ?? []).slice(0, 3));
-      }
+      setGeneratedReadme(nextReadme);
+      setGeneratedRepoName(extractGeneratedRepoName(data, repo.Name));
+      setSubmitMessage("README generated successfully.");
+      setRecentRepos((prev) => prev.map((entry) => (
+        entry._id === repo._id
+          ? { ...entry, Readme: nextReadme, UpdatedAt: new Date().toISOString() }
+          : entry
+      )));
     } finally {
       setRegeneratingId(null);
     }
@@ -539,7 +566,11 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-          {submitMessage && <p className="mt-2 text-[12px] text-[#afa9ec]">{submitMessage}</p>}
+          {submitMessage && (
+            <p className={`mt-2 text-[12px] ${isSubmitMessageError ? "text-[#e0a4be]" : "text-[#afa9ec]"}`}>
+              {submitMessage}
+            </p>
+          )}
         </div>
 
 
@@ -606,6 +637,7 @@ export default function Dashboard() {
                   : [];
 
                 const hasReadme = Boolean(repo.Readme && repo.Readme.trim());
+                const failureReason = repo.Metadata?.readmeFailureReason || "No README content was generated. Try regenerate.";
 
                 return (
                   <div
@@ -634,8 +666,8 @@ export default function Dashboard() {
                           Done
                         </span>
                       ) : (
-                        <span className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#afa9ec] text-[8px] font-medium px-2 py-0.5 rounded-full">
-                          No README
+                        <span className="bg-[#3a1f2c] border border-[#7a3a57] border-[0.5px] text-[#e0a4be] text-[8px] font-medium px-2 py-0.5 rounded-full">
+                          Failed
                         </span>
                       )}
                       <p className="text-[#7f77dd] text-[8px]">{timeAgo(repo.UpdatedAt)}</p>
@@ -691,6 +723,14 @@ export default function Dashboard() {
                           )}
                         </button>
                       </div>
+                      {!hasReadme && (
+                        <p
+                          className="max-w-[140px] text-right text-[8px] leading-3 text-[#e0a4be]"
+                          title={failureReason}
+                        >
+                          {failureReason}
+                        </p>
+                      )}
                     </div>
                   </div>
                 );

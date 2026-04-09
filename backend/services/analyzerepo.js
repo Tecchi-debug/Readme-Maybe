@@ -82,6 +82,8 @@ const analyzeRepo = async (repoUrl, userId) => {
 
     let readmeText = "";
     let readmePath = "";
+    let readmeStatus = "missing";
+    let readmeFailureReason = "No README file was found on the repository default branch.";
 
     if (readmeRes.ok) {
         const readmeData = await readmeRes.json();
@@ -90,6 +92,18 @@ const analyzeRepo = async (repoUrl, userId) => {
         if (readmeData.content) {
             readmeText = Buffer.from(readmeData.content, "base64").toString("utf8");
         }
+
+        if (readmeText.trim()) {
+            readmeStatus = "found";
+            readmeFailureReason = "";
+        } else {
+            readmeStatus = "empty";
+            readmeFailureReason = "A README file exists, but GitHub returned no readable content for it.";
+        }
+    } else if (readmeRes.status !== 404) {
+        const errorText = await readmeRes.text();
+        readmeStatus = "error";
+        readmeFailureReason = `GitHub README lookup failed: ${readmeRes.status}${errorText ? ` ${errorText}` : ""}`;
     }
 
     const tree = treeData.tree || [];
@@ -164,6 +178,8 @@ const analyzeRepo = async (repoUrl, userId) => {
             repoCreatedAt: repoMeta.created_at || null,
             repoUpdatedAt: repoMeta.updated_at || null,
             repoPushedAt: repoMeta.pushed_at || null,
+            readmeStatus,
+            readmeFailureReason,
         },
         IsPrivate: repoMeta.private || false,
         LastIndexedAt: now,
@@ -173,4 +189,3 @@ const analyzeRepo = async (repoUrl, userId) => {
 };
 
 module.exports = analyzeRepo;
-
