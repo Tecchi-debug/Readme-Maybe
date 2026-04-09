@@ -242,7 +242,7 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, []);
 
-  // POST to /readme/generate, shows preview, surfaces Lambda pipeline errors
+  // POST to /analyze, which generates and persists the README
   async function handleGenerateReadme(): Promise<void> {
     const trimmedUrl = repoUrl.trim();
     if (!trimmedUrl) { setSubmitMessage("Please enter a GitHub repo URL."); return; }
@@ -257,7 +257,7 @@ export default function Dashboard() {
     setGeneratedRepoName("");
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/readme/generate`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -353,7 +353,7 @@ export default function Dashboard() {
     }
   }
 
-  // re-runs /readme/generate for a card and updates the preview immediately
+  // re-runs /analyze for a card and updates the preview immediately
   async function handleRegenerateRepo(repo: StoredRepo): Promise<void> {
     const userData = getStoredUserData();
     if (!userData?.id) {
@@ -369,7 +369,7 @@ export default function Dashboard() {
     setRegeneratingId(repo._id);
     setSubmitMessage("");
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/readme/generate`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

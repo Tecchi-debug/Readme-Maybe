@@ -25,7 +25,7 @@ async function getCompareSummary(owner, repoName, fromSha, toSha) {
     if (!response.ok) {
         return null;
     }
-
+    
     const data = await response.json();
     return {
         status: data.status || '',
