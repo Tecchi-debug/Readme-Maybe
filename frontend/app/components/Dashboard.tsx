@@ -690,6 +690,7 @@ export default function Dashboard() {
 
                 const hasReadme = Boolean(repo.Readme && repo.Readme.trim());
                 const generationNumber = Math.max(0, Number(repo.GenerationNumber || 0));
+                const failureReason = extractReadmeFailureReason(repo, repo.Name);
 
                 return (
                   <div
