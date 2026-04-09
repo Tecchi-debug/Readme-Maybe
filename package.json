@@ -9,8 +9,5 @@
   "scripts": {
     "build": "yarn workspace frontend build",
     "dev": "yarn workspace frontend dev"
-  },
-  "devDependencies": {
-    "lightningcss-win32-x64-msvc": "1.31.1"
   }
 }

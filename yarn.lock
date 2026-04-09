@@ -2397,8 +2397,6 @@ __metadata:
 "Readme-Maybe@workspace:.":
   version: 0.0.0-use.local
   resolution: "Readme-Maybe@workspace:."
-  dependencies:
-    lightningcss-win32-x64-msvc: "npm:1.31.1"
   languageName: unknown
   linkType: soft
 
@@ -3043,7 +3041,6 @@ __metadata:
 "lightningcss-win32-x64-msvc@npm:1.31.1":
   version: 1.31.1
   resolution: "lightningcss-win32-x64-msvc@npm:1.31.1"
-  checksum: 10c0/509948fd887946a3fffb066b1a321667cde6297f3c2c0aeba829d69e6f05ac457fe9cca4f5a20c88999ef87beb8880751434e8513bd29070ead42afcb387eac5
   conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
