@@ -267,13 +267,6 @@ function Login() {
                   className="w-full rounded-xl border border-[#3C3489] bg-[#1c1a2e] px-4 py-3 placeholder:text-[#534AB7] outline-none transition focus:border-[#7F77DD] focus:border-3" />
               </div>
 
-              {/* forgot password: sign in only */}
-              {!isCreateAccount && (
-                <div className="-mt-1 text-right">
-                  <button type="button" className="text-sm text-[#7F77DD] hover:text-[#AFA9EC]">Forgot password?</button>
-                </div>
-              )}
-
               {/* submit */}
               <button type="submit" id="loginButton"
                 className="mt-2 w-full rounded-xl bg-[#1D8E75] px-4 py-3 text-xl font-mono transition hover:bg-[#23b184] active:scale-[0.99]">
