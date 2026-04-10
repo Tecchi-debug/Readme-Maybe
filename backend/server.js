@@ -1,211 +1,105 @@
-require('dotenv').config();
-const express = require('express');
+const express = require('express'); 
+const analyzeUrlRoute = require('./routes/gitRoutes');
+const readmeRoutes = require('./routes/readmeRoutes');
 const cors = require('cors');
-const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+const crypto = require('crypto');
+const mongoose = require('mongoose');
+const { loadSecrets, getSecretValue, getMongoUri, getAppPort, getSecretsDebugInfo } = require('./services/secretsManager');
+
 
 const app = express();
-app.use(cors());
+const startedAt = new Date();
+
+// CORS configuration - must be applied BEFORE routes
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+    credentials: false
+}));
+
 app.use(express.json());
 app.set('trust proxy', 1);
+
+app.use((req, res, next) => {
+    const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+    req.requestId = requestId;
+    res.setHeader('X-Request-Id', requestId);
+    next();
+});
+
+app.use((req, res, next) => {
+    const started = Date.now();
+
+    res.on('finish', () => {
+        const durationMs = Date.now() - started;
+        const logEvent = {
+            level: 'info',
+            event: 'http_request',
+            requestId: req.requestId,
+            method: req.method,
+            path: req.originalUrl,
+            statusCode: res.statusCode,
+            durationMs,
+            ip: req.ip,
+            userAgent: req.get('user-agent') || '',
+        };
+
+        console.log(JSON.stringify(logEvent));
+    });
+
+    next();
+});
 
 const MongoClient = require('mongodb').MongoClient;
 let client;
 
-async function getMongoUri() {
-    const client = new SecretsManagerClient({ region: "us-east-2" });
-    const response = await client.send(new GetSecretValueCommand({ SecretId: "prod/readmemaybe/database" }));
-    const secrets = JSON.parse(response.SecretString);
-    return secrets.MONGODB_URI;
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', authRoutes);
+app.use('/readme', readmeRoutes);
+
+async function initDatabase() {
+    const mongoUri = await getMongoUri();
+    mongoose.connect(mongoUri)
+    .then(() => console.log('MongoDB connected (Mongoose)'))
+    .catch(err => console.error(err));
 }
 
-const hardcodedMongoUri = process.env.MONGODB_URI;
-
-
-async function initializeDatabase() {
-    let url = '';
-
-    try {
-        url = await getMongoUri();
-    }
-    catch (error) {
-        if (error && error.name === 'CredentialsProviderError') {
-            console.warn('AWS credentials not found, using hardcoded Mongo URI for local run.');
-            url = hardcodedMongoUri;
-        }
-        else {
-            throw error;
-        }
-    }
-
-    if (!url) {
-        throw new Error('Secret must contain MONGODB_URI');
-    }
-
-    const clientOptions = {
-        tls: true,
-        tlsAllowInvalidCertificates: false,
-        serverSelectionTimeoutMS: 5000,
-    };
-
-    client = new MongoClient(url, clientOptions);
-    await client.connect();
-    console.log('Successfully connected to MongoDB!');
-}
-
-app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader(
-        'Access-Control-Allow-Headers',
-        'Origin, X-Requested-With, Content-Type, Accept, Authorization'
-    );
-    res.setHeader(
-        'Access-Control-Allow-Methods',
-        'GET, POST, PATCH, DELETE, OPTIONS'
-    );
-    next();
+mongoose.connection.on('connected', () => {
+    console.log(JSON.stringify({ level: 'info', event: 'mongo_connected' }));
 });
 
-initializeDatabase()
-    .then(() => {
-        // app.listen(5000); // start Node + Express server on port 5000
+mongoose.connection.on('disconnected', () => {
+    console.warn(JSON.stringify({ level: 'warn', event: 'mongo_disconnected' }));
+});
 
-        app.listen(5000, '127.0.0.1', () => {
-            console.log('API listening on 127.0.0.1:5000');
-        });
-    })
-    .catch((error) => {
-        console.error('Failed to initialize server:', error);
-        process.exit(1);
+mongoose.connection.on('error', (error) => {
+    console.error(JSON.stringify({ level: 'error', event: 'mongo_error', message: error.message }));
+});
+
+app.get('/healthz', (req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        uptimeSec: Math.floor(process.uptime()),
+        startedAt,
+        now: new Date(),
     });
+});
 
-var cardList =
-    [
-        'Roy Campanella',
-        'Paul Molitor',
-        'Tony Gwynn',
-        'Dennis Eckersley',
-        'Reggie Jackson',
-        'Gaylord Perry',
-        'Buck Leonard',
-        'Rollie Fingers',
-        'Charlie Gehringer',
-        'Wade Boggs',
-        'Carl Hubbell',
-        'Dave Winfield',
-        'Jackie Robinson',
-        'Ken Griffey, Jr.',
-        'Al Simmons',
-        'Chuck Klein',
-        'Mel Ott',
-        'Mark McGwire',
-        'Nolan Ryan',
-        'Ralph Kiner',
-        'Yogi Berra',
-        'Goose Goslin',
-        'Greg Maddux',
-        'Frankie Frisch',
-        'Ernie Banks',
-        'Ozzie Smith',
-        'Hank Greenberg',
-        'Kirby Puckett',
-        'Bob Feller',
-        'Dizzy Dean',
-        'Joe Jackson',
-        'Sam Crawford',
-        'Barry Bonds',
-        'Duke Snider',
-        'George Sisler',
-        'Ed Walsh',
-        'Tom Seaver',
-        'Willie Stargell',
-        'Bob Gibson',
-        'Brooks Robinson',
-        'Steve Carlton',
-        'Joe Medwick',
-        'Nap Lajoie',
-        'Cal Ripken, Jr.',
-        'Mike Schmidt',
-        'Eddie Murray',
-        'Tris Speaker',
-        'Al Kaline',
-        'Sandy Koufax',
-        'Willie Keeler',
-        'Pete Rose',
-        'Robin Roberts',
-        'Eddie Collins',
-        'Lefty Gomez',
-        'Lefty Grove',
-        'Carl Yastrzemski',
-        'Frank Robinson',
-        'Juan Marichal',
-        'Warren Spahn',
-        'Pie Traynor',
-        'Roberto Clemente',
-        'Harmon Killebrew',
-        'Satchel Paige',
-        'Eddie Plank',
-        'Josh Gibson',
-        'Oscar Charleston',
-        'Mickey Mantle',
-        'Cool Papa Bell',
-        'Johnny Bench',
-        'Mickey Cochrane',
-        'Jimmie Foxx',
-        'Jim Palmer',
-        'Cy Young',
-        'Eddie Mathews',
-        'Honus Wagner',
-        'Paul Waner',
-        'Grover Alexander',
-        'Rod Carew',
-        'Joe DiMaggio',
-        'Joe Morgan',
-        'Stan Musial',
-        'Bill Terry',
-        'Rogers Hornsby',
-        'Lou Brock',
-        'Ted Williams',
-        'Bill Dickey',
-        'Christy Mathewson',
-        'Willie McCovey',
-        'Lou Gehrig',
-        'George Brett',
-        'Hank Aaron',
-        'Harry Heilmann',
-        'Walter Johnson',
-        'Roger Clemens',
-        'Ty Cobb',
-        'Whitey Ford',
-        'Willie Mays',
-        'Rickey Henderson',
-        'Babe Ruth'
-    ];
+app.get('/readyz', (req, res) => {
+    const mongoReady = mongoose.connection.readyState === 1;
+    const secretsInfo = getSecretsDebugInfo();
+    const ready = mongoReady && secretsInfo.loaded;
 
-app.post('/api/addcard', async (req, res, next) => {
-    // incoming: userId, color
-    // outgoing: error
-
-    const { userId, card } = req.body;
-
-    const newCard = { Card: card, UserId: userId };
-    var error = '';
-
-    try {
-        const db = client.db('main');
-        const result = db.collection('Cards').insertOne(newCard);
-    }
-    catch (e) {
-        error = e.toString();
-    }
-
-    cardList.push(card);
-
-    var ret = { error: error };
-    res.status(200).json(ret);
+    res.status(ready ? 200 : 503).json({
+        ready,
+        mongoReady,
+        secretsLoaded: secretsInfo.loaded,
+    });
 });
 
 
-app.post('/api/login', async (req, res, next) => {
+/*app.post('/api/login', async (req, res, next) => {
     // incoming: login, password
     // outgoing: id, firstName, lastName, error
 
@@ -228,7 +122,7 @@ app.post('/api/login', async (req, res, next) => {
 
     var ret = { id: id, firstName: fn, lastName: ln, error: '' };
     res.status(200).json(ret);
-});
+});*/
 
 
 
@@ -256,3 +150,49 @@ app.post('/api/searchcards', async (req, res, next) => {
 
 
 
+app.use('/',analyzeUrlRoute);
+
+
+async function startServer() {
+    try {
+        await loadSecrets();
+        getSecretValue('MONGODB_URI');
+        getSecretValue('JWT_SECRET');
+        getSecretValue('EMAIL_HOST');
+        getSecretValue('EMAIL_USER');
+        getSecretValue('EMAIL_PASS');
+        getSecretValue('EMAIL_FROM');
+
+        await initDatabase();
+
+        const secretsInfo = getSecretsDebugInfo();
+        console.log(JSON.stringify({
+            level: 'info',
+            event: 'secrets_loaded',
+            secretId: secretsInfo.secretId,
+            region: secretsInfo.region,
+            loaded: secretsInfo.loaded,
+            keyCount: secretsInfo.keys.length,
+        }));
+
+        const port = getAppPort();
+        app.listen(port, '127.0.0.1', () => {
+            console.log(JSON.stringify({ level: 'info', event: 'server_started', host: '127.0.0.1', port }));
+        });
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'error', event: 'startup_failed', message: err.message }));
+        process.exit(1);
+    }
+}
+
+process.on('unhandledRejection', (reason) => {
+    const message = reason instanceof Error ? reason.message : String(reason);
+    console.error(JSON.stringify({ level: 'error', event: 'unhandled_rejection', message }));
+});
+
+process.on('uncaughtException', (error) => {
+    console.error(JSON.stringify({ level: 'error', event: 'uncaught_exception', message: error.message }));
+    process.exit(1);
+});
+
+startServer();
