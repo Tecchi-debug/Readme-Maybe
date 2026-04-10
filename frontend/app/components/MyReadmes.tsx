@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 
 // -------------------------------------------------------------------------
 // Types
@@ -37,6 +37,208 @@ type StoredRepo = {
 };
 
 // -------------------------------------------------------------------------
+// Markdown renderer (block-level + inline subset, matches Dashboard viewer)
+// -------------------------------------------------------------------------
+
+function slugify(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function parseInlineMarkdown(
+  text: string
+): Array<{ type: "text" | "code" | "strong"; value: string }> {
+  const tokens: Array<{ type: "text" | "code" | "strong"; value: string }> = [];
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(pattern)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      tokens.push({ type: "text", value: text.slice(lastIndex, start) });
+    }
+    const raw = match[0];
+    if (raw.startsWith("`")) {
+      tokens.push({ type: "code", value: raw.slice(1, -1) });
+    } else {
+      tokens.push({ type: "strong", value: raw.slice(2, -2) });
+    }
+    lastIndex = start + raw.length;
+  }
+
+  if (lastIndex < text.length) {
+    tokens.push({ type: "text", value: text.slice(lastIndex) });
+  }
+
+  return tokens.length ? tokens : [{ type: "text", value: text }];
+}
+
+function renderInlineMarkdown(text: string, keyPrefix: string) {
+  return parseInlineMarkdown(text).map((token, index) => {
+    const key = `${keyPrefix}-${index}`;
+    if (token.type === "code") {
+      return (
+        <code key={key} className="rounded bg-[#18152a] px-1.5 py-0.5 text-[#9fe1cb]">
+          {token.value}
+        </code>
+      );
+    }
+    if (token.type === "strong") {
+      return (
+        <strong key={key} className="font-semibold text-[#f6f4ff]">
+          {token.value}
+        </strong>
+      );
+    }
+    return <span key={key}>{token.value}</span>;
+  });
+}
+
+function renderMarkdownPreview(markdown: string): ReactNode[] {
+  const lines = markdown.split(/\r?\n/);
+  const blocks: ReactNode[] = [];
+  let paragraph: string[] = [];
+  let listItems: string[] = [];
+  let codeLines: string[] = [];
+  let codeLanguage = "";
+  let inCodeBlock = false;
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    const text = paragraph.join(" ").trim();
+    if (!text) { paragraph = []; return; }
+    blocks.push(
+      <p key={`p-${blocks.length}`} className="text-[14px] leading-7 text-[#c8c2ef]">
+        {renderInlineMarkdown(text, `p-${blocks.length}`)}
+      </p>
+    );
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (!listItems.length) return;
+    blocks.push(
+      <ul key={`ul-${blocks.length}`} className="space-y-2 text-[14px] leading-7 text-[#c8c2ef]">
+        {listItems.map((item, index) => (
+          <li key={`li-${blocks.length}-${index}`} className="flex items-start gap-3">
+            <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#7f77dd]" />
+            <span>{renderInlineMarkdown(item, `li-${blocks.length}-${index}`)}</span>
+          </li>
+        ))}
+      </ul>
+    );
+    listItems = [];
+  };
+
+  const flushCode = () => {
+    if (!codeLines.length) return;
+    blocks.push(
+      <div key={`code-${blocks.length}`} className="overflow-hidden rounded-[12px] border border-[#302a54] bg-[#100e1f]">
+        <div className="flex items-center justify-between border-b border-[#252240] px-4 py-2 text-[10px] uppercase tracking-[0.22em] text-[#7f77dd]">
+          <span>{codeLanguage || "code"}</span>
+          <span className="text-[#5dcaa5]">{codeLines.length} lines</span>
+        </div>
+        <pre className="overflow-x-auto px-4 py-4 text-[12px] leading-6 text-[#eeedfe]">
+          <code>{codeLines.join("\n")}</code>
+        </pre>
+      </div>
+    );
+    codeLines = [];
+    codeLanguage = "";
+  };
+
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      flushParagraph();
+      flushList();
+      if (inCodeBlock) {
+        flushCode();
+        inCodeBlock = false;
+      } else {
+        inCodeBlock = true;
+        codeLanguage = line.trim().slice(3).trim();
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    if (trimmed.startsWith("# ")) {
+      flushParagraph();
+      flushList();
+      const text = trimmed.slice(2);
+      blocks.push(
+        <h1 key={`h1-${blocks.length}`} id={slugify(text)} className="text-[28px] leading-tight font-medium tracking-tight text-[#f6f4ff]">
+          {text}
+        </h1>
+      );
+      continue;
+    }
+
+    if (trimmed.startsWith("## ")) {
+      flushParagraph();
+      flushList();
+      const text = trimmed.slice(3);
+      blocks.push(
+        <h2 key={`h2-${blocks.length}`} id={slugify(text)} className="pt-3 text-[20px] font-medium tracking-tight text-[#f6f4ff]">
+          {text}
+        </h2>
+      );
+      continue;
+    }
+
+    if (trimmed.startsWith("### ")) {
+      flushParagraph();
+      flushList();
+      const text = trimmed.slice(4);
+      blocks.push(
+        <h3 key={`h3-${blocks.length}`} id={slugify(text)} className="pt-2 text-[16px] font-medium text-[#eeedfe]">
+          {text}
+        </h3>
+      );
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      flushParagraph();
+      listItems.push(trimmed.replace(/^[-*]\s+/, ""));
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(trimmed)) {
+      flushParagraph();
+      listItems.push(trimmed.replace(/^\d+\.\s+/, ""));
+      continue;
+    }
+
+    if (trimmed === "---") {
+      flushParagraph();
+      flushList();
+      blocks.push(<div key={`hr-${blocks.length}`} className="my-2 h-px w-full bg-[#2b2646]" />);
+      continue;
+    }
+
+    paragraph.push(trimmed);
+  }
+
+  flushParagraph();
+  flushList();
+  flushCode();
+
+  return blocks;
+}
+
+// -------------------------------------------------------------------------
 // Helpers
 // -------------------------------------------------------------------------
 
@@ -68,8 +270,20 @@ export default function MyReadmes() {
   const [loadError, setLoadError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
 
-  // --- viewer: repo whose README is open in the right panel ---
+  // --- editor: repo whose README is open in the right panel ---
   const [viewingRepo, setViewingRepo] = useState<StoredRepo | null>(null);
+  // working copy of the markdown for the open repo (edits live here until Save)
+  const [draftReadme, setDraftReadme] = useState<string>("");
+  // "edit" = raw markdown only, "preview" = rendered HTML only, "split" = both
+  const [viewMode, setViewMode] = useState<"edit" | "preview" | "split">("split");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+
+  // true when draft differs from the persisted README
+  const isDirty = viewingRepo != null && draftReadme !== (viewingRepo.Readme || "");
+
+  // memoize rendered preview so typing stays responsive
+  const previewBlocks = useMemo(() => renderMarkdownPreview(draftReadme), [draftReadme]);
 
   // --- per-row loading states ---
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -89,6 +303,16 @@ export default function MyReadmes() {
       setPendingOpenId(null);
     }
   }, [pendingOpenId, repos]);
+
+  // when a different repo is opened, seed the editor draft and clear save msg
+  useEffect(() => {
+    if (viewingRepo) {
+      setDraftReadme(viewingRepo.Readme || "");
+      setSaveMessage("");
+    } else {
+      setDraftReadme("");
+    }
+  }, [viewingRepo?._id]);
 
   // reads user session from localStorage
   function getStoredUserData(): StoredUserData | null {
@@ -216,6 +440,45 @@ export default function MyReadmes() {
       setActionMessage(err instanceof Error ? err.message : `Failed to regenerate ${repo.Name}.`);
     } finally {
       setRegeneratingId(null);
+    }
+  }
+
+  // PUT /api/repos/:id/readme - persists the draft markdown
+  async function handleSaveReadme(): Promise<void> {
+    if (!viewingRepo) return;
+    const userData = getStoredUserData();
+    if (!userData?.token) {
+      setSaveMessage("Please sign in to save.");
+      return;
+    }
+    setIsSaving(true);
+    setSaveMessage("");
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/repos/${viewingRepo._id}/readme`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${userData.token}`,
+          },
+          body: JSON.stringify({ Readme: draftReadme }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setSaveMessage(data?.message || "Failed to save README.");
+        return;
+      }
+      const updated: StoredRepo = data.repo;
+      // reflect in list + viewer
+      setRepos((prev) => prev.map((r) => (r._id === updated._id ? updated : r)));
+      setViewingRepo(updated);
+      setSaveMessage("Saved.");
+    } catch (err) {
+      setSaveMessage(err instanceof Error ? err.message : "Failed to save README.");
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -437,13 +700,15 @@ export default function MyReadmes() {
           )}
         </div>
 
-        {/* right panel: README viewer */}
+        {/* right panel: README editor (raw markdown + rendered preview) */}
         {viewingRepo && (
           <div className="flex-1 flex flex-col border-l border-[#252240] bg-[#13111e] overflow-hidden">
-            {/* viewer header */}
+            {/* editor header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#252240] flex-shrink-0">
               <div className="min-w-0">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#7f77dd] mb-0.5">README</p>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#7f77dd] mb-0.5">
+                  README Editor {isDirty && <span className="text-[#e0a4be] normal-case tracking-normal">• unsaved</span>}
+                </p>
                 <h2 className="text-[#eeedfe] text-[16px] font-medium truncate">{viewingRepo.Name}</h2>
                 <p className="text-[#afa9ec] text-[10px]">Version v{Math.max(0, Number(viewingRepo.GenerationNumber || 0))}</p>
                 <a href={viewingRepo.RemoteUrl} target="_blank" rel="noopener noreferrer" className="text-[#7f77dd] text-[10px] hover:text-[#afa9ec] transition">
@@ -451,19 +716,43 @@ export default function MyReadmes() {
                 </a>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                {/* View mode toggle */}
+                <div className="flex items-center bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[7px] overflow-hidden">
+                  {(["edit", "split", "preview"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setViewMode(mode)}
+                      className={`text-[11px] px-3 py-1.5 transition ${
+                        viewMode === mode
+                          ? "bg-[#534ab7] text-[#eeedfe]"
+                          : "text-[#7f77dd] hover:text-[#eeedfe]"
+                      }`}
+                    >
+                      {mode === "edit" ? "Edit" : mode === "split" ? "Split" : "Preview"}
+                    </button>
+                  ))}
+                </div>
+                {/* Save */}
+                <button
+                  onClick={handleSaveReadme}
+                  disabled={isSaving || !isDirty}
+                  className="bg-[#1d9e75] text-[#eeedfe] text-[11px] px-3 py-1.5 rounded-[7px] hover:bg-[#24b386] transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isSaving ? "Saving…" : "Save"}
+                </button>
                 {/* Copy markdown to clipboard */}
                 <button
-                  onClick={() => navigator.clipboard.writeText(viewingRepo.Readme)}
-                  disabled={!viewingRepo.Readme?.trim()}
+                  onClick={() => navigator.clipboard.writeText(draftReadme)}
+                  disabled={!draftReadme.trim()}
                   className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#eeedfe] text-[11px] px-3 py-1.5 rounded-[7px] hover:border-[#7f77dd] transition disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Copy
                 </button>
                 {/* Download as README.md file */}
                 <button
-                  disabled={!viewingRepo.Readme?.trim()}
+                  disabled={!draftReadme.trim()}
                   onClick={() => {
-                    const blob = new Blob([viewingRepo.Readme], { type: "text/markdown" });
+                    const blob = new Blob([draftReadme], { type: "text/markdown" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
@@ -476,32 +765,72 @@ export default function MyReadmes() {
                   Download
                 </button>
                 {/* Close viewer */}
-                <button onClick={() => setViewingRepo(null)} className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#7f77dd] text-[11px] px-3 py-1.5 rounded-[7px] hover:border-[#7f77dd] hover:text-[#eeedfe] transition">
+                <button
+                  onClick={() => {
+                    if (isDirty && !confirm("Discard unsaved changes?")) return;
+                    setViewingRepo(null);
+                  }}
+                  className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#7f77dd] text-[11px] px-3 py-1.5 rounded-[7px] hover:border-[#7f77dd] hover:text-[#eeedfe] transition"
+                >
                   Close
                 </button>
               </div>
             </div>
 
-            {/* README content: scrollable plain text */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {viewingRepo.Readme?.trim() ? (
-                <pre className="text-[#eeedfe] text-[12px] leading-6 whitespace-pre-wrap font-mono">
-                  {viewingRepo.Readme}
-                </pre>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-                  <p className="text-[#eeedfe] text-[14px] font-medium">No README content</p>
-                  <p className="text-[#7f77dd] text-[12px]">This repo hasn&apos;t had a README generated yet.</p>
-                  <button
-                    onClick={() => handleRegenerate(viewingRepo)}
-                    disabled={regeneratingId === viewingRepo._id}
-                    className="mt-2 bg-[#534ab7] text-[#eeedfe] text-[12px] px-5 py-2 rounded-[8px] hover:bg-[#6258c4] transition disabled:opacity-60"
-                  >
-                    {regeneratingId === viewingRepo._id ? "Generating…" : "Generate README"}
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* Save status message bar */}
+            {saveMessage && (
+              <div className="px-6 py-2 border-b border-[#252240] text-[#afa9ec] text-[11px] flex-shrink-0">
+                {saveMessage}
+              </div>
+            )}
+
+            {/* Editor body */}
+            {viewingRepo.Readme?.trim() || draftReadme.trim() ? (
+              <div className="flex-1 flex overflow-hidden">
+                {/* Raw markdown textarea */}
+                {(viewMode === "edit" || viewMode === "split") && (
+                  <div className={`flex flex-col overflow-hidden ${viewMode === "split" ? "w-1/2 border-r border-[#252240]" : "w-full"}`}>
+                    <div className="px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[#7f77dd] border-b border-[#252240] flex-shrink-0">
+                      Markdown
+                    </div>
+                    <textarea
+                      value={draftReadme}
+                      onChange={(e) => setDraftReadme(e.target.value)}
+                      spellCheck={false}
+                      className="flex-1 w-full bg-[#0f0d1a] text-[#eeedfe] text-[12px] leading-6 font-mono p-4 outline-none resize-none"
+                    />
+                  </div>
+                )}
+
+                {/* Rendered HTML preview */}
+                {(viewMode === "preview" || viewMode === "split") && (
+                  <div className={`flex flex-col overflow-hidden ${viewMode === "split" ? "w-1/2" : "w-full"}`}>
+                    <div className="px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[#7f77dd] border-b border-[#252240] flex-shrink-0">
+                      Preview
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                      {previewBlocks.length > 0 ? (
+                        previewBlocks
+                      ) : (
+                        <p className="text-[#7f77dd] text-[12px] italic">Nothing to preview yet.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center">
+                <p className="text-[#eeedfe] text-[14px] font-medium">No README content</p>
+                <p className="text-[#7f77dd] text-[12px]">This repo hasn&apos;t had a README generated yet.</p>
+                <button
+                  onClick={() => handleRegenerate(viewingRepo)}
+                  disabled={regeneratingId === viewingRepo._id}
+                  className="mt-2 bg-[#534ab7] text-[#eeedfe] text-[12px] px-5 py-2 rounded-[8px] hover:bg-[#6258c4] transition disabled:opacity-60"
+                >
+                  {regeneratingId === viewingRepo._id ? "Generating…" : "Generate README"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

@@ -729,7 +729,7 @@ export default function Dashboard() {
         </div>
 
         {/* stat cards: live data from /api/repos */}
-        <div className="grid grid-cols-3 gap-3 mb-7">
+        <div className="mb-7 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
 
           {/* READMEs generated: repos with non-empty Readme */}
           <div className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] p-4">
@@ -780,7 +780,7 @@ export default function Dashboard() {
 
         {/* submit a repo: connected repo shelf + manual URL */}
         <div className="mb-7">
-          <div className="mb-3 max-w-[980px] flex items-end justify-between gap-4">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-[#eeedfe] text-[16px] font-medium">Submit a repo</p>
               <p className="mt-1 text-[12px] text-[#7f77dd]">Choose from your connected GitHub projects or paste a URL manually.</p>
@@ -790,16 +790,16 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="max-w-[980px] rounded-[24px] border border-[#30295a] bg-[linear-gradient(180deg,rgba(30,27,53,0.96),rgba(17,14,30,0.98))] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.28)]">
-            <div className="grid gap-5 lg:grid-cols-[1.25fr_0.95fr]">
+          <div className="w-full rounded-[24px] border border-[#30295a] bg-[linear-gradient(180deg,rgba(30,27,53,0.96),rgba(17,14,30,0.98))] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.28)]">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.95fr)]">
               <div className="space-y-4">
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.22em] text-[#7f77dd]">Connected GitHub repos</p>
                     <p className="mt-1 text-[12px] text-[#afa9ec]">Pick a repo tile to fill the URL automatically.</p>
                   </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                      <div className="w-full max-w-[250px]">
+                  <div className="flex w-full items-center gap-3 xl:w-auto xl:flex-shrink-0">
+                      <div className="w-full xl:max-w-[280px]">
                     <input
                       type="text"
                       value={repoSearch}
@@ -811,7 +811,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="grid max-h-[292px] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+                <div className="grid max-h-[360px] gap-3 overflow-y-auto pr-1 md:grid-cols-2 2xl:grid-cols-3">
                   {isLoadingRepos && [0, 1, 2, 3].map((index) => (
                     <div key={index} className="h-[96px] animate-pulse rounded-[18px] border border-[#2a2447] bg-[#151225]" />
                   ))}
@@ -862,7 +862,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="rounded-[20px] border border-[#2b2547] bg-[#131021] p-4">
+              <div className="rounded-[20px] border border-[#2b2547] bg-[#131021] p-4 xl:self-stretch">
                 <p className="text-[11px] uppercase tracking-[0.22em] text-[#7f77dd]">Selection</p>
                 <div className="mt-3 rounded-[18px] border border-[#302a54] bg-[#171328] p-4">
                   {selectedGithubRepo ? (
@@ -892,7 +892,7 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <div className="mt-4 flex gap-3">
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                   <input
                     type="text"
                     placeholder="https://github.com/user/repo-name"
@@ -996,7 +996,7 @@ export default function Dashboard() {
 
           {/* Loading skeleton */}
           {isLoadingActivity && (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="bg-[#1c1a2e] border border-[#3c3489] border-[0.5px] rounded-[10px] px-4 py-4 animate-pulse">
                   <div className="h-4 bg-[#252240] rounded w-[60%] mb-2" />
@@ -1015,7 +1015,7 @@ export default function Dashboard() {
 
           {/* live repo cards: 3-col grid matching stat cards */}
           {!isLoadingActivity && recentRepos.length > 0 && (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {recentRepos.map((repo) => {
                 // language tags from metadata
                 const languages: string[] = repo.Metadata?.languages?.length
