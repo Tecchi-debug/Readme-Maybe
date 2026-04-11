@@ -62,11 +62,16 @@ const analyzeRepoController = async(req,res) => {
 
         const compareSummary = await getCompareSummary(result.Owner, result.Name, baseSha, result.Sha);
 
+        // Pass the already-analyzed result into the Lambda payload so the
+        // Lambda doesn't recursively call /analyze (which would re-trigger
+        // generateReadme and create an infinite loop). The Lambda checks
+        // requestBody.analyzeData and uses it directly when present.
         const generated = await generateReadme(repoUrl, {
             regenerationMode,
             baseSha,
             latestSha: result.Sha,
             compareSummary,
+            analyzeData: result,
         });
 
         if (!generated.readme) {
