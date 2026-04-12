@@ -31,6 +31,20 @@ const getFrontendAuthRedirectBase = () => (
     getOptionalSecretValue('FRONTEND_APP_URL', 'http://localhost:3000/Login')
 );
 
+const getFrontendUrl = (pathname, params = {}) => {
+    const url = new URL(getFrontendAuthRedirectBase());
+    url.pathname = pathname;
+    url.search = '';
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+            url.searchParams.set(key, String(value));
+        }
+    });
+
+    return url.toString();
+};
+
 const getGithubOauthConfig = () => ({
     clientId: getSecretValue('GITHUB_CLIENT_ID'),
     clientSecret: getSecretValue('GITHUB_CLIENT_SECRET'),
@@ -46,14 +60,10 @@ const signGithubState = () => (
 );
 
 const buildAuthRedirectUrl = (params) => {
-    const url = new URL(getFrontendAuthRedirectBase());
-    Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-            url.searchParams.set(key, String(value));
-        }
-    });
-    return url.toString();
+    return getFrontendUrl('/Login', params);
 };
+
+const buildResetPasswordUrl = (token) => getFrontendUrl('/ResetPassword', { token });
 
 const splitName = (name = '', fallback = '') => {
     const trimmed = (name || '').trim();
@@ -524,6 +534,83 @@ const refresh = async (req, res) => {
     }
 };
 
+const forgotPassword = async (req, res) => {
+    try {
+        const normalizedEmail = (req.body?.Email || '').trim().toLowerCase();
+
+        if (normalizedEmail) {
+            const user = await User.findOne({ Email: normalizedEmail });
+
+            if (user) {
+                const resetToken = jwt.sign(
+                    { id: user._id.toString(), type: 'password-reset' },
+                    getJwtSecret(),
+                    { expiresIn: '15m' }
+                );
+
+                const resetUrl = buildResetPasswordUrl(resetToken);
+                await sendEmail(
+                    user.Email,
+                    'Reset your ReadMeMaybe password',
+                    `
+                    <h2>Password reset requested</h2>
+                    <p>We received a request to reset your ReadMeMaybe password.</p>
+                    <p>Click the button below to choose a new password:</p>
+                    <p><a href="${resetUrl}">Reset Password</a></p>
+                    <p>This link expires in 15 minutes.</p>
+                    <p>If you did not request this, you can safely ignore this email.</p>
+                    `
+                );
+            }
+        }
+
+        return res.status(200).json({
+            message: 'If that email exists, a reset link has been sent.'
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Server Error' });
+    }
+};
+
+const resetPassword = async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { Password = '' } = req.body;
+
+        if (!token) {
+            return res.status(400).json({ message: 'Reset token is required.' });
+        }
+
+        if (typeof Password !== 'string' || Password.trim().length < 8) {
+            return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
+        }
+
+        const decoded = jwt.verify(token, getJwtSecret());
+        if (decoded.type !== 'password-reset' || !decoded.id) {
+            return res.status(400).json({ message: 'Invalid or expired reset link.' });
+        }
+
+        const user = await User.findById(decoded.id);
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid or expired reset link.' });
+        }
+
+        user.hashedPassword = await bcrypt.hash(Password, 12);
+        await user.save();
+
+        await JwtSession.updateMany(
+            { UserId: user._id, RevokedAt: null },
+            { RevokedAt: new Date() }
+        );
+
+        return res.status(200).json({ message: 'Password reset successful. Please sign in.' });
+    } catch (error) {
+        console.error(error);
+        return res.status(400).json({ message: 'Invalid or expired reset link.' });
+    }
+};
+
 const logout = async (req, res) => {
     try {
         const bearerToken = req.header('Authorization')?.replace('Bearer ', '');
@@ -593,4 +680,16 @@ const verifyEmail = async (req, res) => {
     }
 };
 
-module.exports = {register, login, refresh, logout, me, verifyEmail, githubStart, githubCallback, githubRepos};
+module.exports = {
+    register,
+    login,
+    forgotPassword,
+    resetPassword,
+    refresh,
+    logout,
+    me,
+    verifyEmail,
+    githubStart,
+    githubCallback,
+    githubRepos
+};
