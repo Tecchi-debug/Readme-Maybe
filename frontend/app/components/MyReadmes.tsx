@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // -------------------------------------------------------------------------
 // Types
@@ -37,206 +39,92 @@ type StoredRepo = {
 };
 
 // -------------------------------------------------------------------------
-// Markdown renderer (block-level + inline subset, matches Dashboard viewer)
+// Themed markdown components for react-markdown
 // -------------------------------------------------------------------------
 
 function slugify(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-function parseInlineMarkdown(
-  text: string
-): Array<{ type: "text" | "code" | "strong"; value: string }> {
-  const tokens: Array<{ type: "text" | "code" | "strong"; value: string }> = [];
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
-  let lastIndex = 0;
-
-  for (const match of text.matchAll(pattern)) {
-    const start = match.index ?? 0;
-    if (start > lastIndex) {
-      tokens.push({ type: "text", value: text.slice(lastIndex, start) });
-    }
-    const raw = match[0];
-    if (raw.startsWith("`")) {
-      tokens.push({ type: "code", value: raw.slice(1, -1) });
-    } else {
-      tokens.push({ type: "strong", value: raw.slice(2, -2) });
-    }
-    lastIndex = start + raw.length;
-  }
-
-  if (lastIndex < text.length) {
-    tokens.push({ type: "text", value: text.slice(lastIndex) });
-  }
-
-  return tokens.length ? tokens : [{ type: "text", value: text }];
-}
-
-function renderInlineMarkdown(text: string, keyPrefix: string) {
-  return parseInlineMarkdown(text).map((token, index) => {
-    const key = `${keyPrefix}-${index}`;
-    if (token.type === "code") {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const markdownComponents: Record<string, React.ComponentType<any>> = {
+  h1: ({ children }: any) => (
+    <h1 id={slugify(String(children))} className="text-[28px] leading-tight font-medium tracking-tight text-[#f6f4ff]">{children}</h1>
+  ),
+  h2: ({ children }: any) => (
+    <h2 id={slugify(String(children))} className="pt-3 text-[20px] font-medium tracking-tight text-[#f6f4ff]">{children}</h2>
+  ),
+  h3: ({ children }: any) => (
+    <h3 id={slugify(String(children))} className="pt-2 text-[16px] font-medium text-[#eeedfe]">{children}</h3>
+  ),
+  h4: ({ children }: any) => (
+    <h4 className="pt-1 text-[14px] font-medium text-[#eeedfe]">{children}</h4>
+  ),
+  p: ({ children }: any) => (
+    <p className="text-[14px] leading-7 text-[#c8c2ef]">{children}</p>
+  ),
+  a: ({ href, children }: any) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#7f77dd] underline hover:text-[#afa9ec] transition">{children}</a>
+  ),
+  strong: ({ children }: any) => (
+    <strong className="font-semibold text-[#f6f4ff]">{children}</strong>
+  ),
+  em: ({ children }: any) => (
+    <em className="italic text-[#c8c2ef]">{children}</em>
+  ),
+  code: ({ className, children }: any) => {
+    const isBlock = className?.includes("language-");
+    if (isBlock) {
+      const lang = className?.replace("language-", "") || "code";
       return (
-        <code key={key} className="rounded bg-[#18152a] px-1.5 py-0.5 text-[#9fe1cb]">
-          {token.value}
-        </code>
-      );
-    }
-    if (token.type === "strong") {
-      return (
-        <strong key={key} className="font-semibold text-[#f6f4ff]">
-          {token.value}
-        </strong>
-      );
-    }
-    return <span key={key}>{token.value}</span>;
-  });
-}
-
-function renderMarkdownPreview(markdown: string): ReactNode[] {
-  const lines = markdown.split(/\r?\n/);
-  const blocks: ReactNode[] = [];
-  let paragraph: string[] = [];
-  let listItems: string[] = [];
-  let codeLines: string[] = [];
-  let codeLanguage = "";
-  let inCodeBlock = false;
-
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    const text = paragraph.join(" ").trim();
-    if (!text) { paragraph = []; return; }
-    blocks.push(
-      <p key={`p-${blocks.length}`} className="text-[14px] leading-7 text-[#c8c2ef]">
-        {renderInlineMarkdown(text, `p-${blocks.length}`)}
-      </p>
-    );
-    paragraph = [];
-  };
-
-  const flushList = () => {
-    if (!listItems.length) return;
-    blocks.push(
-      <ul key={`ul-${blocks.length}`} className="space-y-2 text-[14px] leading-7 text-[#c8c2ef]">
-        {listItems.map((item, index) => (
-          <li key={`li-${blocks.length}-${index}`} className="flex items-start gap-3">
-            <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#7f77dd]" />
-            <span>{renderInlineMarkdown(item, `li-${blocks.length}-${index}`)}</span>
-          </li>
-        ))}
-      </ul>
-    );
-    listItems = [];
-  };
-
-  const flushCode = () => {
-    if (!codeLines.length) return;
-    blocks.push(
-      <div key={`code-${blocks.length}`} className="overflow-hidden rounded-[12px] border border-[#302a54] bg-[#100e1f]">
-        <div className="flex items-center justify-between border-b border-[#252240] px-4 py-2 text-[10px] uppercase tracking-[0.22em] text-[#7f77dd]">
-          <span>{codeLanguage || "code"}</span>
-          <span className="text-[#5dcaa5]">{codeLines.length} lines</span>
+        <div className="overflow-hidden rounded-[12px] border border-[#302a54] bg-[#100e1f]">
+          <div className="flex items-center justify-between border-b border-[#252240] px-4 py-2 text-[10px] uppercase tracking-[0.22em] text-[#7f77dd]">
+            <span>{lang}</span>
+          </div>
+          <pre className="overflow-x-auto px-4 py-4 text-[12px] leading-6 text-[#eeedfe]">
+            <code>{children}</code>
+          </pre>
         </div>
-        <pre className="overflow-x-auto px-4 py-4 text-[12px] leading-6 text-[#eeedfe]">
-          <code>{codeLines.join("\n")}</code>
-        </pre>
-      </div>
-    );
-    codeLines = [];
-    codeLanguage = "";
-  };
-
-  for (const line of lines) {
-    if (line.trim().startsWith("```")) {
-      flushParagraph();
-      flushList();
-      if (inCodeBlock) {
-        flushCode();
-        inCodeBlock = false;
-      } else {
-        inCodeBlock = true;
-        codeLanguage = line.trim().slice(3).trim();
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeLines.push(line);
-      continue;
-    }
-
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      flushParagraph();
-      flushList();
-      continue;
-    }
-
-    if (trimmed.startsWith("# ")) {
-      flushParagraph();
-      flushList();
-      const text = trimmed.slice(2);
-      blocks.push(
-        <h1 key={`h1-${blocks.length}`} id={slugify(text)} className="text-[28px] leading-tight font-medium tracking-tight text-[#f6f4ff]">
-          {text}
-        </h1>
       );
-      continue;
     }
-
-    if (trimmed.startsWith("## ")) {
-      flushParagraph();
-      flushList();
-      const text = trimmed.slice(3);
-      blocks.push(
-        <h2 key={`h2-${blocks.length}`} id={slugify(text)} className="pt-3 text-[20px] font-medium tracking-tight text-[#f6f4ff]">
-          {text}
-        </h2>
-      );
-      continue;
-    }
-
-    if (trimmed.startsWith("### ")) {
-      flushParagraph();
-      flushList();
-      const text = trimmed.slice(4);
-      blocks.push(
-        <h3 key={`h3-${blocks.length}`} id={slugify(text)} className="pt-2 text-[16px] font-medium text-[#eeedfe]">
-          {text}
-        </h3>
-      );
-      continue;
-    }
-
-    if (/^[-*]\s+/.test(trimmed)) {
-      flushParagraph();
-      listItems.push(trimmed.replace(/^[-*]\s+/, ""));
-      continue;
-    }
-
-    if (/^\d+\.\s+/.test(trimmed)) {
-      flushParagraph();
-      listItems.push(trimmed.replace(/^\d+\.\s+/, ""));
-      continue;
-    }
-
-    if (trimmed === "---") {
-      flushParagraph();
-      flushList();
-      blocks.push(<div key={`hr-${blocks.length}`} className="my-2 h-px w-full bg-[#2b2646]" />);
-      continue;
-    }
-
-    paragraph.push(trimmed);
-  }
-
-  flushParagraph();
-  flushList();
-  flushCode();
-
-  return blocks;
-}
+    return <code className="rounded bg-[#18152a] px-1.5 py-0.5 text-[#9fe1cb]">{children}</code>;
+  },
+  pre: ({ children }: any) => <>{children}</>,
+  ul: ({ children }: any) => (
+    <ul className="space-y-2 text-[14px] leading-7 text-[#c8c2ef]">{children}</ul>
+  ),
+  ol: ({ children }: any) => (
+    <ol className="space-y-2 text-[14px] leading-7 text-[#c8c2ef] list-decimal list-inside">{children}</ol>
+  ),
+  li: ({ children }: any) => (
+    <li className="flex items-start gap-3">
+      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#7f77dd] flex-shrink-0" />
+      <span>{children}</span>
+    </li>
+  ),
+  hr: () => <div className="my-2 h-px w-full bg-[#2b2646]" />,
+  blockquote: ({ children }: any) => (
+    <blockquote className="border-l-[3px] border-[#534ab7] pl-4 text-[14px] italic text-[#afa9ec]">{children}</blockquote>
+  ),
+  table: ({ children }: any) => (
+    <div className="overflow-x-auto rounded-[10px] border border-[#302a54]">
+      <table className="w-full text-[12px] text-[#c8c2ef]">{children}</table>
+    </div>
+  ),
+  thead: ({ children }: any) => (
+    <thead className="bg-[#1c1a2e] text-[#eeedfe] text-left">{children}</thead>
+  ),
+  th: ({ children }: any) => (
+    <th className="px-4 py-2 border-b border-[#302a54] font-medium">{children}</th>
+  ),
+  td: ({ children }: any) => (
+    <td className="px-4 py-2 border-b border-[#252240]">{children}</td>
+  ),
+  img: ({ src, alt }: any) => (
+    <img src={src} alt={alt || ""} className="max-w-full rounded-[8px]" />
+  ),
+};
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // -------------------------------------------------------------------------
 // Helpers
@@ -283,7 +171,13 @@ export default function MyReadmes() {
   const isDirty = viewingRepo != null && draftReadme !== (viewingRepo.Readme || "");
 
   // memoize rendered preview so typing stays responsive
-  const previewBlocks = useMemo(() => renderMarkdownPreview(draftReadme), [draftReadme]);
+  const previewContent = useMemo(() => (
+    draftReadme.trim() ? (
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {draftReadme}
+      </ReactMarkdown>
+    ) : null
+  ), [draftReadme]);
 
   // --- per-row loading states ---
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -809,8 +703,8 @@ export default function MyReadmes() {
                       Preview
                     </div>
                     <div className="flex-1 overflow-y-auto p-6 space-y-3">
-                      {previewBlocks.length > 0 ? (
-                        previewBlocks
+                      {previewContent ? (
+                        previewContent
                       ) : (
                         <p className="text-[#7f77dd] text-[12px] italic">Nothing to preview yet.</p>
                       )}

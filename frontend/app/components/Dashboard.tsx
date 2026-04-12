@@ -124,6 +124,16 @@ export default function Dashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
 
+  // --- Progress stepper for generation ---
+  const [generationStep, setGenerationStep] = useState(0);
+  const generationSteps = [
+    "Analyzing repository structure...",
+    "Selecting important files...",
+    "Fetching source code...",
+    "Generating README with AI...",
+    "Finalizing...",
+  ];
+
   // --- Dashboard stats and recent activity (from /api/repos) ---
   const [stats, setStats] = useState<DashboardStats>({ totalReadmes: 0, totalRepos: 0, thisWeekCount: 0 });
   const [recentRepos, setRecentRepos] = useState<StoredRepo[]>([]);
@@ -250,6 +260,14 @@ export default function Dashboard() {
 
     setIsSubmitting(true);
     setSubmitMessage("");
+    setGenerationStep(0);
+
+    // Advance through progress steps on a timer while the request is in-flight
+    const stepTimings = [0, 3000, 6000, 12000, 30000]; // ms before each step
+    const stepTimeouts: ReturnType<typeof setTimeout>[] = [];
+    stepTimings.forEach((delay, i) => {
+      stepTimeouts.push(setTimeout(() => setGenerationStep(i), delay));
+    });
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
@@ -297,7 +315,9 @@ export default function Dashboard() {
     } catch (err) {
       setSubmitMessage(err instanceof Error ? err.message : "Failed to generate README.");
     } finally {
+      stepTimeouts.forEach(clearTimeout);
       setIsSubmitting(false);
+      setGenerationStep(0);
     }
   }
 
@@ -679,7 +699,50 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-          {submitMessage && (
+          {/* Generation progress stepper */}
+          {isSubmitting && (
+            <div className="mt-4 rounded-[16px] border border-[#302a54] bg-[#131021] p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <svg className="w-4 h-4 animate-spin text-[#7f77dd]" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                <p className="text-[#eeedfe] text-[13px] font-medium">Generating README</p>
+              </div>
+              <div className="space-y-2">
+                {generationSteps.map((label, i) => {
+                  const isActive = i === generationStep;
+                  const isDone = i < generationStep;
+                  return (
+                    <div key={i} className="flex items-center gap-3">
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-medium transition-all duration-300 ${
+                        isDone
+                          ? "bg-[#1d9e75] text-[#eeedfe]"
+                          : isActive
+                          ? "bg-[#534ab7] text-[#eeedfe] ring-2 ring-[#534ab7]/40"
+                          : "bg-[#1c1a2e] border border-[#3c3489] text-[#7f77dd]"
+                      }`}>
+                        {isDone ? (
+                          <svg width="10" height="10" viewBox="0 0 15 15" fill="none">
+                            <path d="M3 7.5l3.5 3.5L12 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        ) : (
+                          i + 1
+                        )}
+                      </div>
+                      <p className={`text-[12px] transition-all duration-300 ${
+                        isDone ? "text-[#5dcaa5]" : isActive ? "text-[#eeedfe]" : "text-[#5c5686]"
+                      }`}>
+                        {label}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {!isSubmitting && submitMessage && (
             <p className={`mt-2 text-[12px] ${isSubmitMessageError ? "text-[#e0a4be]" : "text-[#afa9ec]"}`}>
               {submitMessage}
             </p>
