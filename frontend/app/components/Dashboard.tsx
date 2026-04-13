@@ -1,7 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import StatusToast from "./ui/StatusToast";
 
 // -------------------------------------------------------------------------
 // Types
@@ -42,6 +44,11 @@ type StoredRepo = {
     language?: string;
     readmeFailureReason?: string;
     readmeStatus?: string;
+    lastPullRequestUrl?: string;
+    lastPullRequestNumber?: number | null;
+    lastPullRequestBranch?: string;
+    lastPullRequestCreatedAt?: string;
+    lastPullRequestState?: string;
   };
   UpdatedAt: string;
   CreatedAt: string;
@@ -101,6 +108,30 @@ function timeAgo(dateStr: string): string {
   return `${days} days ago`;
 }
 
+function inferToastTone(message: string): "success" | "error" | "info" {
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("failed") ||
+    normalized.includes("error") ||
+    normalized.includes("no readme") ||
+    normalized.includes("please") ||
+    normalized.includes("sign in") ||
+    normalized.includes("not configured")
+  ) {
+    return "error";
+  }
+
+  if (
+    normalized.includes("success") ||
+    normalized.includes("saved") ||
+    normalized.includes("created")
+  ) {
+    return "success";
+  }
+
+  return "info";
+}
+
 // -------------------------------------------------------------------------
 // Main Dashboard Component
 // -------------------------------------------------------------------------
@@ -142,6 +173,7 @@ export default function Dashboard() {
   // Tracks which card is mid-delete or mid-regenerate to show per-card loading states
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [creatingPrId, setCreatingPrId] = useState<string | null>(null);
 
   // reads user session from localStorage
   function getStoredUserData(): StoredUserData | null {
@@ -249,13 +281,13 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, []);
 
-  // POST to /analyze, which generates and persists the README
+  // POST to /readme/generate, which generates and persists the README
   async function handleGenerateReadme(): Promise<void> {
     const trimmedUrl = repoUrl.trim();
     if (!trimmedUrl) { setSubmitMessage("Please enter a GitHub repo URL."); return; }
 
     const userData = getStoredUserData();
-    if (!userData?.id) { setSubmitMessage("Please sign in before submitting a repo."); return; }
+    if (!userData?.token) { setSubmitMessage("Please sign in before submitting a repo."); return; }
     if (!process.env.NEXT_PUBLIC_API_URL) { setSubmitMessage("API URL is not configured."); return; }
 
     setIsSubmitting(true);
@@ -270,13 +302,13 @@ export default function Dashboard() {
     });
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/readme/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(userData?.token ? { Authorization: `Bearer ${userData.token}` } : {}),
         },
-        body: JSON.stringify({ repoUrl: trimmedUrl, userId: userData.id, regenerationMode: "auto" }),
+        body: JSON.stringify({ repoUrl: trimmedUrl }),
       });
 
       const data = await res.json();
@@ -288,12 +320,7 @@ export default function Dashboard() {
         return;
       }
 
-      const modeLabel = data?.regenerationMode === "past-version-regeneration"
-        ? "(past-version regeneration)"
-        : data?.regenerationMode === "same-version-regeneration"
-        ? "(same-version regeneration)"
-        : "";
-      setSubmitMessage(`README generated successfully ${modeLabel}`.trim());
+      setSubmitMessage("README generated successfully.");
 
       // prepend returned repo immediately, then confirm with a refetch
       if (data?._id) {
@@ -326,11 +353,7 @@ export default function Dashboard() {
     reposMessage.toLowerCase().includes("sign in") ||
     reposMessage.toLowerCase().includes("failed");
 
-  const isSubmitMessageError = submitMessage.toLowerCase().includes("failed") ||
-    submitMessage.toLowerCase().includes("no readme") ||
-    submitMessage.toLowerCase().includes("please") ||
-    submitMessage.toLowerCase().includes("sign in") ||
-    submitMessage.toLowerCase().includes("not configured");
+  const submitToastTone = inferToastTone(submitMessage);
 
   const filteredGithubRepos = githubRepos.filter((repo) => {
     const query = repoSearch.trim().toLowerCase();
@@ -372,10 +395,10 @@ export default function Dashboard() {
     }
   }
 
-  // re-runs /analyze for a card and updates the preview immediately
+  // re-runs /readme/generate for a card and updates the preview immediately
   async function handleRegenerateRepo(repo: StoredRepo): Promise<void> {
     const userData = getStoredUserData();
-    if (!userData?.id) {
+    if (!userData?.token) {
       setSubmitMessage("Please sign in before regenerating.");
       return;
     }
@@ -388,18 +411,13 @@ export default function Dashboard() {
     setRegeneratingId(repo._id);
     setSubmitMessage("");
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/readme/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(userData?.token ? { Authorization: `Bearer ${userData.token}` } : {}),
         },
-        body: JSON.stringify({
-          repoUrl: repo.RemoteUrl,
-          userId: userData.id,
-          regenerationMode: "auto",
-          baseSha: repo.Sha || "",
-        }),
+        body: JSON.stringify({ repoUrl: repo.RemoteUrl }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -414,19 +432,72 @@ export default function Dashboard() {
       }
 
       setSubmitMessage("README generated successfully.");
-      setRecentRepos((prev) => prev.map((entry) => (
-        entry._id === repo._id
-          ? { ...entry, Readme: nextReadme, UpdatedAt: new Date().toISOString() }
-          : entry
-      )));
+      setRecentRepos((prev) => prev.map((entry) => {
+        if (entry._id !== repo._id) return entry;
+        return typeof data?._id === "string" ? data : { ...entry, Readme: nextReadme, UpdatedAt: new Date().toISOString() };
+      }));
+    } catch (err) {
+      setSubmitMessage(err instanceof Error ? err.message : `Failed to regenerate ${repo.Name}.`);
     } finally {
       setRegeneratingId(null);
+    }
+  }
+
+  async function handleCreatePullRequest(repo: StoredRepo): Promise<void> {
+    const userData = getStoredUserData();
+    if (!userData?.token) {
+      setSubmitMessage("Please sign in before creating a pull request.");
+      return;
+    }
+
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setSubmitMessage("API URL is not configured.");
+      return;
+    }
+
+    setCreatingPrId(repo._id);
+    setSubmitMessage("");
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos/${repo._id}/readme-pr`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userData.token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setSubmitMessage(data?.message || `Failed to create a pull request for ${repo.Name}.`);
+        return;
+      }
+
+      setSubmitMessage(`Pull request created for ${repo.Name}.`);
+
+      if (data?.repo?._id) {
+        setRecentRepos((prev) => prev.map((entry) => (
+          entry._id === repo._id ? data.repo : entry
+        )));
+      }
+
+      if (typeof data?.prUrl === "string" && data.prUrl) {
+        window.open(data.prUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      setSubmitMessage(err instanceof Error ? err.message : `Failed to create a pull request for ${repo.Name}.`);
+    } finally {
+      setCreatingPrId(null);
     }
   }
 
 
   return (
     <div className="flex h-screen w-full bg-[#13111e] font-mono overflow-hidden relative">
+      <StatusToast
+        message={submitMessage}
+        tone={submitToastTone}
+        onDismiss={() => setSubmitMessage("")}
+      />
 
       {/* bg glows */}
       <div className="pointer-events-none absolute -top-20 right-[-60px] w-[340px] h-[340px] rounded-full bg-[#1d9e75] opacity-[0.15]" />
@@ -742,11 +813,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {!isSubmitting && submitMessage && (
-            <p className={`mt-2 text-[12px] ${isSubmitMessageError ? "text-[#e0a4be]" : "text-[#afa9ec]"}`}>
-              {submitMessage}
-            </p>
-          )}
         </div>
 
         {/* recent activity: live StoredRepo cards */}
@@ -827,7 +893,7 @@ export default function Dashboard() {
                       )}
                       <p className="text-[#7f77dd] text-[8px]">{timeAgo(repo.UpdatedAt)}</p>
                       <p className="text-[#afa9ec] text-[8px]">v{generationNumber}</p>
-                      {/* Action buttons row - View, Regenerate, Delete */}
+                      {/* Action buttons row - View, PR, Regenerate, Delete */}
                       <div className="flex gap-1.5">
                         {/* View README - navigates to MyReadmes with this repo expanded */}
                         <button
@@ -841,9 +907,36 @@ export default function Dashboard() {
                         >
                           View
                         </button>
-                        {/* Regenerate - re-runs /analyze and refreshes the card */}
+                        {/* Create PR - opens a branch + pull request for README.md at repo root */}
                         <button
-                          disabled={regeneratingId === repo._id || deletingId === repo._id}
+                          disabled={!hasReadme || creatingPrId === repo._id || regeneratingId === repo._id || deletingId === repo._id}
+                          onClick={(e) => { e.stopPropagation(); handleCreatePullRequest(repo); }}
+                          title="Create GitHub pull request"
+                          className={`border border-[0.5px] px-2.5 py-1.5 rounded-[5px] transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                            hasReadme
+                              ? "bg-[#252240] border-[#3c3489] text-[#7f77dd] hover:border-[#7f77dd]"
+                              : "bg-[#1c1a2d] border-[#676670] text-[#676670] cursor-not-allowed"
+                          }`}
+                        >
+                          {creatingPrId === repo._id ? (
+                            <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                            </svg>
+                          ) : (
+                            <Image
+                              src="/assets/git-pull-request.svg"
+                              alt=""
+                              width={12}
+                              height={12}
+                              aria-hidden="true"
+                              className="opacity-100"
+                            />
+                          )}
+                        </button>
+                        {/* Regenerate - re-runs /readme/generate and refreshes the card */}
+                        <button
+                          disabled={regeneratingId === repo._id || deletingId === repo._id || creatingPrId === repo._id}
                           onClick={(e) => { e.stopPropagation(); handleRegenerateRepo(repo); }}
                           title="Regenerate README"
                           className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#5dcaa5] px-2.5 py-1.5 rounded-[5px] hover:border-[#5dcaa5] transition disabled:opacity-40 disabled:cursor-not-allowed"
@@ -862,7 +955,7 @@ export default function Dashboard() {
                         </button>
                         {/* Delete - removes the repo from the DB */}
                         <button
-                          disabled={deletingId === repo._id || regeneratingId === repo._id}
+                          disabled={deletingId === repo._id || regeneratingId === repo._id || creatingPrId === repo._id}
                           onClick={(e) => { e.stopPropagation(); handleDeleteRepo(repo._id); }}
                           title="Delete repo"
                           className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#e0a4be] px-2.5 py-1.5 rounded-[5px] hover:border-[#e0a4be] transition disabled:opacity-40 disabled:cursor-not-allowed"
@@ -879,6 +972,17 @@ export default function Dashboard() {
                           )}
                         </button>
                       </div>
+                      {repo.Metadata?.lastPullRequestUrl && (
+                        <a
+                          href={repo.Metadata.lastPullRequestUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[8px] text-[#7f77dd] hover:text-[#afa9ec] transition"
+                        >
+                          View PR #{repo.Metadata.lastPullRequestNumber || "latest"}
+                        </a>
+                      )}
                       {!hasReadme && (
                         <p
                           className="max-w-[140px] text-right text-[8px] leading-3 text-[#e0a4be]"

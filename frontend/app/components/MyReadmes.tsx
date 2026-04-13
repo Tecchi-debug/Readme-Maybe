@@ -1,9 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import StatusToast from "./ui/StatusToast";
 
 // -------------------------------------------------------------------------
 // Types
@@ -33,6 +35,11 @@ type StoredRepo = {
     languages?: string[];
     language?: string;
     description?: string;
+    lastPullRequestUrl?: string;
+    lastPullRequestNumber?: number | null;
+    lastPullRequestBranch?: string;
+    lastPullRequestCreatedAt?: string;
+    lastPullRequestState?: string;
   };
   UpdatedAt: string;
   CreatedAt: string;
@@ -143,6 +150,30 @@ function timeAgo(dateStr: string): string {
   return `${days} days ago`;
 }
 
+function inferToastTone(message: string): "success" | "error" | "info" {
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("failed") ||
+    normalized.includes("error") ||
+    normalized.includes("please") ||
+    normalized.includes("cannot") ||
+    normalized.includes("couldn't") ||
+    normalized.includes("not configured")
+  ) {
+    return "error";
+  }
+
+  if (
+    normalized.includes("saved") ||
+    normalized.includes("success") ||
+    normalized.includes("created")
+  ) {
+    return "success";
+  }
+
+  return "info";
+}
+
 // -------------------------------------------------------------------------
 // Main component
 // -------------------------------------------------------------------------
@@ -182,6 +213,7 @@ export default function MyReadmes() {
   // --- per-row loading states ---
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [creatingPrId, setCreatingPrId] = useState<string | null>(null);
 
   // --- search ---
   const [search, setSearch] = useState("");
@@ -337,6 +369,53 @@ export default function MyReadmes() {
     }
   }
 
+  async function handleCreatePullRequest(repo: StoredRepo): Promise<void> {
+    const userData = getStoredUserData();
+    if (!userData?.token) {
+      setActionMessage("Please sign in before creating a pull request.");
+      return;
+    }
+
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setActionMessage("API URL is not configured.");
+      return;
+    }
+
+    setCreatingPrId(repo._id);
+    setActionMessage("");
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos/${repo._id}/readme-pr`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userData.token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setActionMessage(data?.message || `Failed to create a pull request for ${repo.Name}.`);
+        return;
+      }
+
+      setActionMessage(`Pull request created for ${repo.Name}.`);
+      if (data?.repo?._id) {
+        setRepos((prev) => prev.map((entry) => (
+          entry._id === repo._id ? data.repo : entry
+        )));
+        if (viewingRepo?._id === repo._id) setViewingRepo(data.repo);
+      }
+
+      if (typeof data?.prUrl === "string" && data.prUrl) {
+        window.open(data.prUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : `Failed to create a pull request for ${repo.Name}.`);
+    } finally {
+      setCreatingPrId(null);
+    }
+  }
+
   // PUT /api/repos/:id/readme - persists the draft markdown
   async function handleSaveReadme(): Promise<void> {
     if (!viewingRepo) return;
@@ -390,6 +469,17 @@ export default function MyReadmes() {
 
   return (
     <div className="flex h-screen w-full bg-[#13111e] font-mono overflow-hidden relative">
+      <StatusToast
+        message={actionMessage}
+        tone={inferToastTone(actionMessage)}
+        onDismiss={() => setActionMessage("")}
+      />
+      <StatusToast
+        message={saveMessage}
+        tone={inferToastTone(saveMessage)}
+        onDismiss={() => setSaveMessage("")}
+        topClassName="top-24"
+      />
 
       {/* bg glows */}
       <div className="pointer-events-none absolute -top-20 right-[-60px] w-[340px] h-[340px] rounded-full bg-[#1d9e75] opacity-[0.15]" />
@@ -494,10 +584,6 @@ export default function MyReadmes() {
             <p className="text-[#e0a4be] text-[13px]">{loadError}</p>
           )}
 
-          {!isLoading && !loadError && actionMessage && (
-            <p className="text-[#afa9ec] text-[13px] mb-3">{actionMessage}</p>
-          )}
-
           {/* Empty state */}
           {!isLoading && !loadError && repos.length === 0 && (
             <div className="flex flex-col items-center justify-center flex-1 gap-3 text-center pt-16">
@@ -571,21 +657,58 @@ export default function MyReadmes() {
                         >
                           View
                         </button>
+                        {/* Create PR */}
+                        <button
+                          disabled={!hasReadme || creatingPrId === repo._id || regeneratingId === repo._id || deletingId === repo._id}
+                          onClick={() => handleCreatePullRequest(repo)}
+                          title="Create GitHub pull request"
+                          className={`border border-[0.5px] px-2.5 py-1.5 rounded-[5px] transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                            hasReadme
+                              ? "bg-[#252240] border-[#3c3489] text-[#7f77dd] hover:border-[#7f77dd]"
+                              : "bg-[#1c1a2d] border-[#676670] text-[#676670] cursor-not-allowed"
+                          }`}
+                        >
+                          {creatingPrId === repo._id ? (
+                            <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                            </svg>
+                          ) : (
+                            <Image
+                              src="/assets/git-pull-request.svg"
+                              alt=""
+                              width={12}
+                              height={12}
+                              aria-hidden="true"
+                              className="opacity-100"
+                            />
+                          )}
+                        </button>
                         {/* Regenerate */}
-                        <button disabled={regeneratingId === repo._id || deletingId === repo._id} onClick={() => handleRegenerate(repo)} title="Regenerate" className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#5dcaa5] px-2.5 py-1.5 rounded-[5px] hover:border-[#5dcaa5] transition disabled:opacity-40 disabled:cursor-not-allowed">
+                        <button disabled={regeneratingId === repo._id || deletingId === repo._id || creatingPrId === repo._id} onClick={() => handleRegenerate(repo)} title="Regenerate" className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#5dcaa5] px-2.5 py-1.5 rounded-[5px] hover:border-[#5dcaa5] transition disabled:opacity-40 disabled:cursor-not-allowed">
                           {regeneratingId === repo._id
                             ? <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
                             : <svg width="12" height="12" viewBox="0 0 15 15" fill="none"><path d="M13 7A6 6 0 1 1 7 1v2a4 4 0 1 0 4 4h2Z" fill="currentColor"/><path d="M7 1l2.5 2.5L7 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                           }
                         </button>
                         {/* Delete */}
-                        <button disabled={deletingId === repo._id || regeneratingId === repo._id} onClick={() => handleDelete(repo._id)} title="Delete" className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#e0a4be] px-2.5 py-1.5 rounded-[5px] hover:border-[#e0a4be] transition disabled:opacity-40 disabled:cursor-not-allowed">
+                        <button disabled={deletingId === repo._id || regeneratingId === repo._id || creatingPrId === repo._id} onClick={() => handleDelete(repo._id)} title="Delete" className="bg-[#252240] border border-[#3c3489] border-[0.5px] text-[#e0a4be] px-2.5 py-1.5 rounded-[5px] hover:border-[#e0a4be] transition disabled:opacity-40 disabled:cursor-not-allowed">
                           {deletingId === repo._id
                             ? <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
                             : <svg width="12" height="12" viewBox="0 0 15 15" fill="none"><path d="M3 3l9 9M12 3l-9 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
                           }
                         </button>
                       </div>
+                      {repo.Metadata?.lastPullRequestUrl && (
+                        <a
+                          href={repo.Metadata.lastPullRequestUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[8px] text-[#7f77dd] hover:text-[#afa9ec] transition"
+                        >
+                          View PR #{repo.Metadata.lastPullRequestNumber || "latest"}
+                        </a>
+                      )}
                     </div>
                   </div>
                 );
@@ -670,13 +793,6 @@ export default function MyReadmes() {
                 </button>
               </div>
             </div>
-
-            {/* Save status message bar */}
-            {saveMessage && (
-              <div className="px-6 py-2 border-b border-[#252240] text-[#afa9ec] text-[11px] flex-shrink-0">
-                {saveMessage}
-              </div>
-            )}
 
             {/* Editor body */}
             {viewingRepo.Readme?.trim() || draftReadme.trim() ? (
