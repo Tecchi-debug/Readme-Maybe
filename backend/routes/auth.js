@@ -6,6 +6,8 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 router.post('/register', authController.register);
 router.post('/login', authController.login);
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password/:token', authController.resetPassword);
 router.get('/github', authController.githubStart);
 router.get('/github/callback', authController.githubCallback);
 router.post('/refresh', authController.refresh);

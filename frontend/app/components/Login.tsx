@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useState } from "react";
@@ -265,6 +266,13 @@ function Login() {
                 <label htmlFor="loginPassword" className="mb-2 block text-sm font-mono tracking-wide text-[#AFA9EC]">PASSWORD</label>
                 <input type="password" id="loginPassword" placeholder="........" value={loginPassword} onChange={handleSetPassword}
                   className="w-full rounded-xl border border-[#3C3489] bg-[#1c1a2e] px-4 py-3 placeholder:text-[#534AB7] outline-none transition focus:border-[#7F77DD] focus:border-3" />
+                {!isCreateAccount && (
+                  <div className="mt-2 flex justify-end">
+                    <Link href="/ForgotPassword" className="text-sm text-[#7F77DD] transition hover:text-[#AFA9EC]">
+                      Forgot password?
+                    </Link>
+                  </div>
+                )}
               </div>
 
               {/* submit */}

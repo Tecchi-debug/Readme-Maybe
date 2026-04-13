@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 // -------------------------------------------------------------------------
@@ -62,12 +61,6 @@ function extractReadme(data: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function extractGeneratedRepoName(data: unknown, fallback = ""): string {
-  if (!data || typeof data !== "object") return fallback;
-  const record = data as { Name?: string; FullName?: string; repo?: string };
-  return record.Name || record.FullName || record.repo || fallback;
-}
-
 function extractReadmeFailureReason(data: unknown, repoName = "this repository"): string {
   if (data && typeof data === "object") {
     const record = data as {
@@ -89,216 +82,6 @@ function extractRepoId(data: unknown): string {
   if (!data || typeof data !== "object") return "";
   const record = data as { _id?: string };
   return typeof record._id === "string" ? record._id : "";
-}
-
-function slugifyRepoLabel(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
-
-function parseInlineMarkdown(text: string): Array<{ type: "text" | "code" | "strong"; value: string }> {
-  const tokens: Array<{ type: "text" | "code" | "strong"; value: string }> = [];
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
-  let lastIndex = 0;
-
-  for (const match of text.matchAll(pattern)) {
-    const start = match.index ?? 0;
-    if (start > lastIndex) {
-      tokens.push({ type: "text", value: text.slice(lastIndex, start) });
-    }
-
-    const raw = match[0];
-    if (raw.startsWith("`")) {
-      tokens.push({ type: "code", value: raw.slice(1, -1) });
-    } else {
-      tokens.push({ type: "strong", value: raw.slice(2, -2) });
-    }
-
-    lastIndex = start + raw.length;
-  }
-
-  if (lastIndex < text.length) {
-    tokens.push({ type: "text", value: text.slice(lastIndex) });
-  }
-
-  return tokens.length ? tokens : [{ type: "text", value: text }];
-}
-
-function renderInlineMarkdown(text: string, keyPrefix: string) {
-  return parseInlineMarkdown(text).map((token, index) => {
-    const key = `${keyPrefix}-${index}`;
-    if (token.type === "code") {
-      return <code key={key} className="rounded bg-[#18152a] px-1.5 py-0.5 text-[#9fe1cb]">{token.value}</code>;
-    }
-
-    if (token.type === "strong") {
-      return <strong key={key} className="font-semibold text-[#f6f4ff]">{token.value}</strong>;
-    }
-
-    return <span key={key}>{token.value}</span>;
-  });
-}
-
-type MarkdownBlock = {
-  kind: "h1" | "h2" | "h3" | "body";
-  anchor?: string;
-  node: ReactNode;
-};
-
-function renderMarkdownViewer(markdown: string): MarkdownBlock[] {
-  const lines = markdown.split(/\r?\n/);
-  const blocks: MarkdownBlock[] = [];
-  let paragraph: string[] = [];
-  let listItems: string[] = [];
-  let codeLines: string[] = [];
-  let codeLanguage = "";
-  let inCodeBlock = false;
-
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    const text = paragraph.join(" ").trim();
-    if (!text) {
-      paragraph = [];
-      return;
-    }
-    blocks.push({
-      kind: "body",
-      node: (
-        <p key={`p-${blocks.length}`} className="text-[14px] leading-7 text-[#c8c2ef]">
-          {renderInlineMarkdown(text, `p-${blocks.length}`)}
-        </p>
-      )
-    });
-    paragraph = [];
-  };
-
-  const flushList = () => {
-    if (!listItems.length) return;
-    blocks.push({
-      kind: "body",
-      node: (
-        <ul key={`ul-${blocks.length}`} className="space-y-2 text-[14px] leading-7 text-[#c8c2ef]">
-          {listItems.map((item, index) => (
-            <li key={`li-${blocks.length}-${index}`} className="flex items-start gap-3">
-              <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#7f77dd]" />
-              <span>{renderInlineMarkdown(item, `li-${blocks.length}-${index}`)}</span>
-            </li>
-          ))}
-        </ul>
-      )
-    });
-    listItems = [];
-  };
-
-  const flushCode = () => {
-    if (!codeLines.length) return;
-    blocks.push({
-      kind: "body",
-      node: (
-        <div key={`code-${blocks.length}`} className="overflow-hidden rounded-[18px] border border-[#302a54] bg-[#100e1f]">
-          <div className="flex items-center justify-between border-b border-[#252240] px-4 py-2 text-[11px] uppercase tracking-[0.22em] text-[#7f77dd]">
-            <span>{codeLanguage || "code"}</span>
-            <span className="text-[#5dcaa5]">{codeLines.length} lines</span>
-          </div>
-          <pre className="overflow-x-auto px-4 py-4 text-[12px] leading-6 text-[#eeedfe]">
-            <code>{codeLines.join("\n")}</code>
-          </pre>
-        </div>
-      )
-    });
-    codeLines = [];
-    codeLanguage = "";
-  };
-
-  for (const line of lines) {
-    if (line.trim().startsWith("```")) {
-      flushParagraph();
-      flushList();
-      if (inCodeBlock) {
-        flushCode();
-        inCodeBlock = false;
-      } else {
-        inCodeBlock = true;
-        codeLanguage = line.trim().slice(3).trim();
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeLines.push(line);
-      continue;
-    }
-
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      flushParagraph();
-      flushList();
-      continue;
-    }
-
-    if (trimmed.startsWith("# ")) {
-      flushParagraph();
-      flushList();
-      const text = trimmed.slice(2);
-      blocks.push({
-        kind: "h1",
-        anchor: slugifyRepoLabel(text),
-        node: <h1 key={`h1-${blocks.length}`} className="text-[34px] leading-tight font-medium tracking-tight text-[#f6f4ff]">{text}</h1>
-      });
-      continue;
-    }
-
-    if (trimmed.startsWith("## ")) {
-      flushParagraph();
-      flushList();
-      const text = trimmed.slice(3);
-      blocks.push({
-        kind: "h2",
-        anchor: slugifyRepoLabel(text),
-        node: <h2 key={`h2-${blocks.length}`} className="pt-4 text-[22px] font-medium tracking-tight text-[#f6f4ff]">{text}</h2>
-      });
-      continue;
-    }
-
-    if (trimmed.startsWith("### ")) {
-      flushParagraph();
-      flushList();
-      const text = trimmed.slice(4);
-      blocks.push({
-        kind: "h3",
-        anchor: slugifyRepoLabel(text),
-        node: <h3 key={`h3-${blocks.length}`} className="pt-2 text-[17px] font-medium text-[#eeedfe]">{text}</h3>
-      });
-      continue;
-    }
-
-    if (/^[-*]\s+/.test(trimmed)) {
-      flushParagraph();
-      listItems.push(trimmed.replace(/^[-*]\s+/, ""));
-      continue;
-    }
-
-    if (/^\d+\.\s+/.test(trimmed)) {
-      flushParagraph();
-      listItems.push(trimmed.replace(/^\d+\.\s+/, ""));
-      continue;
-    }
-
-    if (trimmed === "---") {
-      flushParagraph();
-      flushList();
-      blocks.push({ kind: "body", node: <div key={`hr-${blocks.length}`} className="my-2 h-px w-full bg-[#2b2646]" /> });
-      continue;
-    }
-
-    paragraph.push(trimmed);
-  }
-
-  flushParagraph();
-  flushList();
-  flushCode();
-
-  return blocks;
 }
 
 // -------------------------------------------------------------------------
@@ -341,9 +124,15 @@ export default function Dashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
 
-  // --- Generated README preview ---
-  const [generatedReadme, setGeneratedReadme] = useState("");
-  const [generatedRepoName, setGeneratedRepoName] = useState("");
+  // --- Progress stepper for generation ---
+  const [generationStep, setGenerationStep] = useState(0);
+  const generationSteps = [
+    "Analyzing repository structure...",
+    "Selecting important files...",
+    "Fetching source code...",
+    "Generating README with AI...",
+    "Finalizing...",
+  ];
 
   // --- Dashboard stats and recent activity (from /api/repos) ---
   const [stats, setStats] = useState<DashboardStats>({ totalReadmes: 0, totalRepos: 0, thisWeekCount: 0 });
@@ -471,8 +260,14 @@ export default function Dashboard() {
 
     setIsSubmitting(true);
     setSubmitMessage("");
-    setGeneratedReadme("");
-    setGeneratedRepoName("");
+    setGenerationStep(0);
+
+    // Advance through progress steps on a timer while the request is in-flight
+    const stepTimings = [0, 3000, 6000, 12000, 30000]; // ms before each step
+    const stepTimeouts: ReturnType<typeof setTimeout>[] = [];
+    stepTimings.forEach((delay, i) => {
+      stepTimeouts.push(setTimeout(() => setGenerationStep(i), delay));
+    });
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analyze`, {
@@ -493,9 +288,6 @@ export default function Dashboard() {
         return;
       }
 
-      // Show the inline preview
-      setGeneratedReadme(data?.Readme || "");
-      setGeneratedRepoName(data?.Name || data?.FullName || "");
       const modeLabel = data?.regenerationMode === "past-version-regeneration"
         ? "(past-version regeneration)"
         : data?.regenerationMode === "same-version-regeneration"
@@ -523,7 +315,9 @@ export default function Dashboard() {
     } catch (err) {
       setSubmitMessage(err instanceof Error ? err.message : "Failed to generate README.");
     } finally {
+      stepTimeouts.forEach(clearTimeout);
       setIsSubmitting(false);
+      setGenerationStep(0);
     }
   }
 
@@ -563,9 +357,6 @@ export default function Dashboard() {
 
       // optimistically remove from list
       setRecentRepos((prev) => prev.filter((r) => r._id !== repoId));
-
-      // Clear preview if it was showing this repo
-      setGeneratedReadme((prev) => prev);
 
       // refresh stats
       const statsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos`, {
@@ -622,9 +413,6 @@ export default function Dashboard() {
         return;
       }
 
-      // show updated preview
-      setGeneratedReadme(nextReadme);
-      setGeneratedRepoName(extractGeneratedRepoName(data, repo.Name));
       setSubmitMessage("README generated successfully.");
       setRecentRepos((prev) => prev.map((entry) => (
         entry._id === repo._id
@@ -911,78 +699,55 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-          {submitMessage && (
+          {/* Generation progress stepper */}
+          {isSubmitting && (
+            <div className="mt-4 rounded-[16px] border border-[#302a54] bg-[#131021] p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <svg className="w-4 h-4 animate-spin text-[#7f77dd]" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                <p className="text-[#eeedfe] text-[13px] font-medium">Generating README</p>
+              </div>
+              <div className="space-y-2">
+                {generationSteps.map((label, i) => {
+                  const isActive = i === generationStep;
+                  const isDone = i < generationStep;
+                  return (
+                    <div key={i} className="flex items-center gap-3">
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-medium transition-all duration-300 ${
+                        isDone
+                          ? "bg-[#1d9e75] text-[#eeedfe]"
+                          : isActive
+                          ? "bg-[#534ab7] text-[#eeedfe] ring-2 ring-[#534ab7]/40"
+                          : "bg-[#1c1a2e] border border-[#3c3489] text-[#7f77dd]"
+                      }`}>
+                        {isDone ? (
+                          <svg width="10" height="10" viewBox="0 0 15 15" fill="none">
+                            <path d="M3 7.5l3.5 3.5L12 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        ) : (
+                          i + 1
+                        )}
+                      </div>
+                      <p className={`text-[12px] transition-all duration-300 ${
+                        isDone ? "text-[#5dcaa5]" : isActive ? "text-[#eeedfe]" : "text-[#5c5686]"
+                      }`}>
+                        {label}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {!isSubmitting && submitMessage && (
             <p className={`mt-2 text-[12px] ${isSubmitMessageError ? "text-[#e0a4be]" : "text-[#afa9ec]"}`}>
               {submitMessage}
             </p>
           )}
         </div>
-
-
-        {/* inline README preview: shown after generation */}
-        {generatedReadme && (
-          <div className="mb-7 overflow-hidden rounded-[28px] border border-[#30295a] bg-[linear-gradient(180deg,rgba(29,26,46,0.97),rgba(15,13,27,0.99))] shadow-[0_30px_80px_rgba(0,0,0,0.32)]">
-            <div className="border-b border-[#262141] bg-[linear-gradient(90deg,rgba(24,20,40,0.98),rgba(20,26,35,0.9))] px-6 py-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-[#7f77dd]">Generated README</p>
-                  <h3 className="mt-2 text-[30px] font-medium tracking-tight text-[#f6f4ff]">{generatedRepoName || "Preview"}</h3>
-                  <p className="mt-2 max-w-[620px] text-[12px] leading-6 text-[#afa9ec]">
-                    Review the generated markdown in a reading-first layout, then copy it directly into the repository.
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="rounded-full border border-[#255246] bg-[#132820] px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-[#9fe1cb]">
-                    Markdown ready
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => navigator.clipboard.writeText(generatedReadme)}
-                    className="rounded-[12px] border border-[#3a336f] bg-[#201c35] px-4 py-2.5 text-[12px] text-[#eeedfe] transition hover:border-[#7f77dd]"
-                  >
-                    Copy Markdown
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-0 xl:grid-cols-[0.26fr_0.74fr]">
-              <aside className="border-r border-[#262141] bg-[#131021] px-5 py-6">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-[#7f77dd]">Document map</p>
-                <div className="mt-4 space-y-2">
-                  {generatedReadme.split(/\r?\n/).filter((line) => /^#{1,3}\s/.test(line)).map((line) => {
-                    const depth = line.match(/^#+/)?.[0].length || 1;
-                    const label = line.replace(/^#{1,3}\s+/, "");
-                    return (
-                      <a
-                        key={slugifyRepoLabel(`${depth}-${label}`)}
-                        href={`#${slugifyRepoLabel(label)}`}
-                        className={`block rounded-[10px] px-3 py-2 text-[12px] transition hover:bg-[#1b1730] ${
-                          depth === 1 ? "text-[#f6f4ff]" : depth === 2 ? "pl-5 text-[#c8c2ef]" : "pl-7 text-[#9e97c9]"
-                        }`}
-                      >
-                        {label}
-                      </a>
-                    );
-                  })}
-                  {!generatedReadme.split(/\r?\n/).some((line) => /^#{1,3}\s/.test(line)) && (
-                    <p className="text-[12px] leading-6 text-[#7f77dd]">No section headings were found in this README.</p>
-                  )}
-                </div>
-              </aside>
-
-              <div className="max-h-[720px] overflow-y-auto px-6 py-7">
-                <article className="mx-auto flex max-w-[760px] flex-col gap-5">
-                  {renderMarkdownViewer(generatedReadme).map((block, index) => (
-                    <div key={`md-${index}`} id={block.anchor}>
-                      {block.node}
-                    </div>
-                  ))}
-                </article>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* recent activity: live StoredRepo cards */}
         <div>
