@@ -105,7 +105,7 @@ function Login() {
       });
       const res = await response.json();
       if (!response.ok) { setMessage(res.message || "Registration failed"); }
-      else { completeAuth(res); }
+      else { setMessage(res.message || "Registration successful! Please check your email to verify your account."); }
     } catch (error: any) {
       alert(error.toString());
     }
