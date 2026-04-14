@@ -1,0 +1,7 @@
+◇ injected env (14) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+{"level":"info","event":"secrets_loaded","secretId":"prod/readmemaybe/database","region":"us-east-2","loaded":true,"keyCount":17}
+{"level":"info","event":"server_started","host":"127.0.0.1","port":5050}
+{"level":"info","event":"mongo_connected"}
+MongoDB connected (Mongoose)
+(node:31236) [MONGOOSE] Warning: mongoose: Duplicate schema index on {"ExpiresAt":1} for model "JwtSession". This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)

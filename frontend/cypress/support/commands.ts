@@ -8,15 +8,9 @@ type ApiSession = {
   userId: string;
 };
 
-const getApiBaseUrl = () => String(Cypress.env('apiBaseUrl') || 'http://127.0.0.1:5000').replace(/\/$/, '');
+const getApiBaseUrl = () => String(Cypress.env('apiBaseUrl') || 'http://127.0.0.1:5050').replace(/\/$/, '');
 
-const getRequiredEnv = (key: string) => {
-  const value = String(Cypress.env(key) || '').trim();
-  if (!value) {
-    throw new Error(`Missing Cypress env "${key}"`);
-  }
-  return value;
-};
+const getOptionalEnv = (key: string) => String(Cypress.env(key) || '').trim();
 
 Cypress.Commands.add('apiRequest', (options: ApiRequestOptions) => {
   const requestOptions = {
@@ -29,8 +23,40 @@ Cypress.Commands.add('apiRequest', (options: ApiRequestOptions) => {
 });
 
 Cypress.Commands.add('loginByApi', () => {
-  const Email = getRequiredEnv('testEmail');
-  const Password = getRequiredEnv('testPassword');
+  const Email = getOptionalEnv('testEmail');
+  const Password = getOptionalEnv('testPassword');
+
+  if (!Email || !Password) {
+    const unique = Date.now();
+    const disposableEmail = `cypress-user-${unique}@example.com`;
+    const disposableLogin = `cypress-user-${unique}`;
+    const disposablePassword = 'Password123!';
+
+    return cy.apiRequest({
+      method: 'POST',
+      url: '/api/auth/register',
+      body: {
+        FirstName: 'Cypress',
+        LastName: 'User',
+        Login: disposableLogin,
+        Email: disposableEmail,
+        Password: disposablePassword,
+      },
+    }).then((response) => {
+      expect(response.status).to.eq(201);
+      expect(response.body).to.have.property('jwtToken');
+      expect(response.body).to.have.property('refreshToken');
+
+      const userId = String(response.body?.user?._id || response.body?.user?.id || '');
+      expect(userId, 'register response user id').to.not.equal('');
+
+      return {
+        accessToken: String(response.body.jwtToken),
+        refreshToken: String(response.body.refreshToken),
+        userId,
+      } satisfies ApiSession;
+    });
+  }
 
   return cy.apiRequest({
     method: 'POST',

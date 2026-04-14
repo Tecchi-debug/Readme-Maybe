@@ -1,0 +1,177 @@
+
+Warning: The allowCypressEnv configuration option is enabled. This allows any browser code to read values from Cypress.env(). This is insecure and will be removed in a future major version.
+
+1. Replace Cypress.env() calls with cy.env() (for sensitive values) or Cypress.expose() (for public configuration)
+2. Set allowCypressEnv: false in your Cypress configuration to disable Cypress.env()
+
+Learn more: https://on.cypress.io/cypress-env-migration
+
+
+====================================================================================================
+
+  (Run Starting)
+
+  ┌────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Cypress:        15.13.1                                                                        │
+  │ Browser:        Electron 138 (headless)                                                        │
+  │ Node Version:   v22.18.0 (C:\Program Files\nodejs\node.exe)                                    │
+  │ Specs:          1 found (api-endpoints.cy.ts)                                                  │
+  │ Searched:       C:\Users\Tecchi\Documents\Spring 2026\COP4331C\Readme-Maybe\frontend\cypress\e │
+  │                 2e\api-endpoints.cy.ts                                                         │
+  └────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                    
+  Running:  api-endpoints.cy.ts                                                             (1 of 1)
+
+
+  API endpoints
+    Safe public contracts
+      √ GET /healthz responds with service health (55ms)
+      √ GET /readyz responds with readiness state (34ms)
+      √ GET /api/auth/github redirects to GitHub or an auth error screen (42ms)
+      √ GET /api/auth/github/callback without params redirects with an error (27ms)
+      √ POST /api/auth/login rejects an unknown email (499ms)
+      √ POST /api/auth/forgot-password is generic for unknown users (91ms)
+      √ POST /api/auth/reset-password/:token rejects invalid tokens (30ms)
+      √ POST /api/auth/refresh requires a refresh token (20ms)
+      √ POST /api/auth/logout requires a token (27ms)
+      √ GET /api/auth/verify/:token rejects invalid tokens (25ms)
+      √ GET /api/auth/me rejects unauthenticated access (27ms)
+      √ GET /api/auth/github/repos rejects unauthenticated access (23ms)
+      √ GET /api/repos rejects unauthenticated access (19ms)
+      √ PUT /api/repos/:id/readme rejects unauthenticated access (24ms)
+      √ GET /api/repos/:id/versions rejects unauthenticated access (23ms)
+      √ POST /api/repos/:id/versions/:versionId/restore rejects unauthenticated access (20ms)
+      √ POST /api/repos/:id/readme-pr rejects unauthenticated access (21ms)
+      √ DELETE /api/repos/:id rejects unauthenticated access (19ms)
+      √ POST /readme/generate rejects unauthenticated access (19ms)
+    Authenticated auth endpoints
+      √ POST /api/auth/register rejects duplicate credentials for an existing account (9739ms)
+      √ POST /api/auth/login returns a JWT, refresh token, and user object (18ms)
+      √ GET /api/auth/me returns the authenticated user (1317ms)
+      √ POST /api/auth/refresh rotates the refresh session (417ms)
+      √ POST /api/auth/logout revokes the active session (2066ms)
+      √ GET /api/auth/github/repos returns either repos or a not-connected response (616ms)
+      √ GET /api/repos returns stored repos and dashboard stats (773ms)
+    Live repo endpoints
+      √ POST /analyze analyzes a repository and persists a stored repo (41614ms)
+      √ POST /contents fetches file contents for selected files (671ms)
+      √ POST /difference returns the stored repo commit comparison (430ms)
+      √ GET /api/repos/:id/versions returns README snapshots for the analyzed repo (181ms)
+      1) POST /readme/generate returns generated markdown for an authenticated user
+    Opt-in repo mutation endpoints
+      2) "before all" hook for "PUT /api/repos/:id/readme updates the stored README"
+    Opt-in pull request creation
+      3) "before all" hook for "POST /api/repos/:id/readme-pr opens a GitHub pull request"
+    Opt-in destructive delete endpoint
+      4) "before all" hook for "DELETE /api/repos/:id removes a stored repo"
+
+
+  30 passing (2m)
+  4 failing
+
+  1) API endpoints
+       Live repo endpoints
+         POST /readme/generate returns generated markdown for an authenticated user:
+
+      AssertionError: expected 500 to equal 200
+      + expected - actual
+
+      -500
+      +200
+      
+      at Context.eval (webpack://frontend/./cypress/e2e/api-endpoints.cy.ts:410:35)
+      at getRet (http://localhost:3000/__cypress/runner/cypress_runner.js:122798:20)
+      at tryCatcher (http://localhost:3000/__cypress/runner/cypress_runner.js:1777:23)
+      at Promise.attempt.Promise.try (http://localhost:3000/__cypress/runner/cypress_runner.js:4285:29)
+      at Context.thenFn (http://localhost:3000/__cypress/runner/cypress_runner.js:122809:66)
+      at Context.then (http://localhost:3000/__cypress/runner/cypress_runner.js:123060:21)
+
+  2) API endpoints
+       Opt-in repo mutation endpoints
+         "before all" hook for "PUT /api/repos/:id/readme updates the stored README":
+
+      AssertionError: expected 500 to equal 200
+
+Because this error occurred during a `before all` hook we are skipping the remaining tests in the current suite: `Opt-in repo mutation endpoints`
+      + expected - actual
+
+      -500
+      +200
+      
+      at Context.eval (webpack://frontend/./cypress/e2e/api-endpoints.cy.ts:459:44)
+      at getRet (http://localhost:3000/__cypress/runner/cypress_runner.js:122798:20)
+      at tryCatcher (http://localhost:3000/__cypress/runner/cypress_runner.js:1777:23)
+      at Promise.attempt.Promise.try (http://localhost:3000/__cypress/runner/cypress_runner.js:4285:29)
+      at Context.thenFn (http://localhost:3000/__cypress/runner/cypress_runner.js:122809:66)
+      at Context.then (http://localhost:3000/__cypress/runner/cypress_runner.js:123060:21)
+
+  3) API endpoints
+       Opt-in pull request creation
+         "before all" hook for "POST /api/repos/:id/readme-pr opens a GitHub pull request":
+
+      AssertionError: expected 500 to equal 200
+
+Because this error occurred during a `before all` hook we are skipping the remaining tests in the current suite: `Opt-in pull request creation`
+      + expected - actual
+
+      -500
+      +200
+      
+      at Context.eval (webpack://frontend/./cypress/e2e/api-endpoints.cy.ts:534:35)
+      at getRet (http://localhost:3000/__cypress/runner/cypress_runner.js:122798:20)
+      at tryCatcher (http://localhost:3000/__cypress/runner/cypress_runner.js:1777:23)
+      at Promise.attempt.Promise.try (http://localhost:3000/__cypress/runner/cypress_runner.js:4285:29)
+      at Context.thenFn (http://localhost:3000/__cypress/runner/cypress_runner.js:122809:66)
+      at Context.then (http://localhost:3000/__cypress/runner/cypress_runner.js:123060:21)
+
+  4) API endpoints
+       Opt-in destructive delete endpoint
+         "before all" hook for "DELETE /api/repos/:id removes a stored repo":
+
+      AssertionError: expected 500 to equal 200
+
+Because this error occurred during a `before all` hook we are skipping the remaining tests in the current suite: `Opt-in destructive delete e...`
+      + expected - actual
+
+      -500
+      +200
+      
+      at Context.eval (webpack://frontend/./cypress/e2e/api-endpoints.cy.ts:583:37)
+      at getRet (http://localhost:3000/__cypress/runner/cypress_runner.js:122798:20)
+      at tryCatcher (http://localhost:3000/__cypress/runner/cypress_runner.js:1777:23)
+      at Promise.attempt.Promise.try (http://localhost:3000/__cypress/runner/cypress_runner.js:4285:29)
+      at Context.thenFn (http://localhost:3000/__cypress/runner/cypress_runner.js:122809:66)
+      at Context.then (http://localhost:3000/__cypress/runner/cypress_runner.js:123060:21)
+
+
+
+
+  (Results)
+
+  ┌────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Tests:        35                                                                               │
+  │ Passing:      30                                                                               │
+  │ Failing:      4                                                                                │
+  │ Pending:      0                                                                                │
+  │ Skipped:      1                                                                                │
+  │ Screenshots:  0                                                                                │
+  │ Video:        false                                                                            │
+  │ Duration:     2 minutes, 11 seconds                                                            │
+  │ Spec Ran:     api-endpoints.cy.ts                                                              │
+  └────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+====================================================================================================
+
+  (Run Finished)
+
+
+       Spec                                              Tests  Passing  Failing  Pending  Skipped  
+  ┌────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ ×  api-endpoints.cy.ts                      02:11       35       30        4        -        1 │
+  └────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ×  1 of 1 failed (100%)                     02:11       35       30        4        -        1  
+

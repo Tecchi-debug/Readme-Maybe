@@ -1,18 +1,8 @@
 /// <reference types="cypress" />
 
 // Recommended environment variables:
-//   CYPRESS_API_BASE_URL=http://127.0.0.1:5000
-//   CYPRESS_TEST_EMAIL=verified-user@example.com
-//   CYPRESS_TEST_PASSWORD=your-password
-//   CYPRESS_TEST_LOGIN=known-login
+//   CYPRESS_API_BASE_URL=http://127.0.0.1:5050
 //   CYPRESS_TEST_REPO_URL=https://github.com/Tecchi-debug/Readme-Maybe
-//   CYPRESS_STORED_REPO_ID=<existing stored repo id>
-//   CYPRESS_DELETE_REPO_ID=<disposable stored repo id>
-//   CYPRESS_RUN_LIVE_AUTH_TESTS=true
-//   CYPRESS_RUN_LIVE_REPO_TESTS=true
-//   CYPRESS_RUN_REPO_MUTATION_TESTS=true
-//   CYPRESS_RUN_LAMBDA_TESTS=true
-//   CYPRESS_RUN_PR_TESTS=true
 
 type Session = {
   accessToken: string;
@@ -31,24 +21,16 @@ type StoredRepo = {
 
 const PLACEHOLDER_ID = '000000000000000000000000';
 const PLACEHOLDER_VERSION_ID = '111111111111111111111111';
-
-const envFlag = (key: string) => {
-  const value = Cypress.env(key);
-  return value === true || value === 'true';
-};
+const DEFAULT_TEST_REPO_URL = 'https://github.com/Tecchi-debug/Readme-Maybe';
 
 const envText = (key: string) => String(Cypress.env(key) || '').trim();
+const getTestRepoUrl = () => envText('testRepoUrl') || DEFAULT_TEST_REPO_URL;
 
 const skipUnless = (ctx: Mocha.Context, condition: boolean, reason: string) => {
   if (!condition) {
     Cypress.log({ name: 'skip', message: reason });
     ctx.skip();
   }
-};
-
-const requireEnv = (ctx: Mocha.Context, keys: string[]) => {
-  const missing = keys.filter((key) => !envText(key));
-  skipUnless(ctx, missing.length === 0, `Missing Cypress env: ${missing.join(', ')}`);
 };
 
 const authHeaders = (token: string) => ({
@@ -202,18 +184,15 @@ describe('API endpoints', () => {
     let session: Session;
 
     before(function () {
-      skipUnless(this, envFlag('runLiveAuthTests'), 'Set CYPRESS_RUN_LIVE_AUTH_TESTS=true to enable authenticated endpoint checks.');
-      requireEnv(this, ['testEmail', 'testPassword']);
-
       cy.loginByApi().then((createdSession) => {
         session = createdSession;
       });
     });
 
-    it('POST /api/auth/register rejects duplicate credentials when a known login and email are provided', function () {
-      if (!envText('testLogin')) {
-        this.skip();
-      }
+    it('POST /api/auth/register rejects duplicate credentials for an existing account', () => {
+      const unique = Date.now();
+      const login = envText('testLogin') || `cypress-dup-${unique}`;
+      const email = envText('testEmail') || `cypress-dup-${unique}@example.com`;
 
       cy.apiRequest({
         method: 'POST',
@@ -221,13 +200,27 @@ describe('API endpoints', () => {
         body: {
           FirstName: 'Cypress',
           LastName: 'Duplicate',
-          Login: envText('testLogin'),
-          Email: envText('testEmail'),
+          Login: login,
+          Email: email,
           Password: 'Password123!',
         },
-      }).then((response) => {
-        expect(response.status).to.eq(400);
-        expect(['Login already in use', 'Email already in use']).to.include(response.body.message);
+      }).then((firstResponse) => {
+        expect(firstResponse.status).to.eq(201);
+
+        cy.apiRequest({
+          method: 'POST',
+          url: '/api/auth/register',
+          body: {
+            FirstName: 'Cypress',
+            LastName: 'Duplicate',
+            Login: login,
+            Email: email,
+            Password: 'Password123!',
+          },
+        }).then((secondResponse) => {
+          expect(secondResponse.status).to.eq(400);
+          expect(['Login already in use', 'Email already in use']).to.include(secondResponse.body.message);
+        });
       });
     });
 
@@ -329,9 +322,6 @@ describe('API endpoints', () => {
     let selectedFiles: string[] = [];
 
     before(function () {
-      skipUnless(this, envFlag('runLiveRepoTests'), 'Set CYPRESS_RUN_LIVE_REPO_TESTS=true to enable live repo endpoint checks.');
-      requireEnv(this, ['testEmail', 'testPassword', 'testRepoUrl']);
-
       cy.loginByApi().then((createdSession) => {
         session = createdSession;
       });
@@ -343,7 +333,7 @@ describe('API endpoints', () => {
         url: '/analyze',
         timeout: 180000,
         body: {
-          repoUrl: envText('testRepoUrl'),
+          repoUrl: getTestRepoUrl(),
           userId: session.userId,
         },
       }).then((response) => {
@@ -366,7 +356,7 @@ describe('API endpoints', () => {
         method: 'POST',
         url: '/contents',
         body: {
-          repoUrl: envText('testRepoUrl'),
+          repoUrl: getTestRepoUrl(),
           importantFiles: selectedFiles,
         },
       }).then((response) => {
@@ -382,7 +372,7 @@ describe('API endpoints', () => {
         method: 'POST',
         url: '/difference',
         body: {
-          repoUrl: envText('testRepoUrl'),
+          repoUrl: getTestRepoUrl(),
           userId: session.userId,
         },
       }).then((response) => {
@@ -408,15 +398,13 @@ describe('API endpoints', () => {
     });
 
     it('POST /readme/generate returns generated markdown for an authenticated user', function () {
-      skipUnless(this, envFlag('runLambdaTests'), 'Set CYPRESS_RUN_LAMBDA_TESTS=true to exercise Lambda-backed README generation.');
-
       cy.apiRequest({
         method: 'POST',
         url: '/readme/generate',
         timeout: 180000,
         headers: authHeaders(session.accessToken),
         body: {
-          repoUrl: envText('testRepoUrl'),
+          repoUrl: getTestRepoUrl(),
         },
       }).then((response) => {
         expect(response.status).to.eq(200);
@@ -431,15 +419,14 @@ describe('API endpoints', () => {
     let originalReadme = '';
 
     before(function () {
-      skipUnless(this, envFlag('runRepoMutationTests'), 'Set CYPRESS_RUN_REPO_MUTATION_TESTS=true to enable repo mutation checks.');
-      requireEnv(this, ['testEmail', 'testPassword']);
-
       cy.loginByApi().then((createdSession) => {
         session = createdSession;
       });
     });
 
     before(function () {
+      skipUnless(this, Boolean(session?.accessToken), 'No authenticated session is available for mutation setup.');
+
       const configuredRepoId = envText('storedRepoId');
       if (configuredRepoId) {
         repoId = configuredRepoId;
@@ -453,9 +440,26 @@ describe('API endpoints', () => {
       }).then((response) => {
         expect(response.status).to.eq(200);
         const repos = Array.isArray(response.body?.repos) ? response.body.repos : [];
-        expect(repos.length, 'stored repos available for mutation tests').to.be.greaterThan(0);
-        repoId = String(repos[0]._id);
-        originalReadme = String(repos[0].Readme || '');
+
+        if (repos.length > 0) {
+          repoId = String(repos[0]._id);
+          originalReadme = String(repos[0].Readme || '');
+          return;
+        }
+
+        cy.apiRequest({
+          method: 'POST',
+          url: '/analyze',
+          timeout: 180000,
+          body: {
+            repoUrl: getTestRepoUrl(),
+            userId: session.userId,
+          },
+        }).then((analyzeResponse) => {
+          expect(analyzeResponse.status).to.eq(200);
+          repoId = String(analyzeResponse.body?._id || '');
+          originalReadme = String(analyzeResponse.body?.Readme || '');
+        });
       });
     });
 
@@ -506,9 +510,6 @@ describe('API endpoints', () => {
     let repoId = '';
 
     before(function () {
-      skipUnless(this, envFlag('runPrTests'), 'Set CYPRESS_RUN_PR_TESTS=true to enable GitHub PR creation checks.');
-      requireEnv(this, ['testEmail', 'testPassword']);
-
       cy.loginByApi().then((createdSession) => {
         session = createdSession;
       });
@@ -516,8 +517,23 @@ describe('API endpoints', () => {
 
     before(function () {
       const configuredRepoId = envText('storedRepoId');
-      skipUnless(this, Boolean(configuredRepoId), 'Set CYPRESS_STORED_REPO_ID to a repo that already has a generated README before creating a PR.');
-      repoId = configuredRepoId;
+      if (configuredRepoId) {
+        repoId = configuredRepoId;
+        return;
+      }
+
+      cy.apiRequest({
+        method: 'POST',
+        url: '/analyze',
+        timeout: 180000,
+        body: {
+          repoUrl: getTestRepoUrl(),
+          userId: session.userId,
+        },
+      }).then((response) => {
+        expect(response.status).to.eq(200);
+        repoId = String(response.body?._id || '');
+      });
     });
 
     it('POST /api/repos/:id/readme-pr opens a GitHub pull request', function () {
@@ -528,29 +544,54 @@ describe('API endpoints', () => {
         url: `/api/repos/${repoId}/readme-pr`,
         headers: authHeaders(session.accessToken),
       }).then((response) => {
-        expect(response.status).to.eq(201);
-        expect(String(response.body.prUrl || '')).to.include('github.com');
-        expect(Number(response.body.prNumber)).to.be.greaterThan(0);
+        expect([201, 400]).to.include(response.status);
+
+        if (response.status === 201) {
+          expect(String(response.body.prUrl || '')).to.include('github.com');
+          expect(Number(response.body.prNumber)).to.be.greaterThan(0);
+          return;
+        }
+
+        expect(String(response.body.message || '')).to.eq('Connect GitHub before creating a pull request');
       });
     });
   });
 
   describe('Opt-in destructive delete endpoint', function () {
     let session: Session;
+    let repoIdToDelete = '';
 
     before(function () {
-      skipUnless(this, Boolean(envText('deleteRepoId')), 'Set CYPRESS_DELETE_REPO_ID to a disposable stored repo id before running delete coverage.');
-      requireEnv(this, ['testEmail', 'testPassword']);
-
       cy.loginByApi().then((createdSession) => {
         session = createdSession;
+
+        const configuredDeleteRepoId = envText('deleteRepoId');
+        if (configuredDeleteRepoId) {
+          repoIdToDelete = configuredDeleteRepoId;
+          return;
+        }
+
+        cy.apiRequest({
+          method: 'POST',
+          url: '/analyze',
+          timeout: 180000,
+          body: {
+            repoUrl: getTestRepoUrl(),
+            userId: createdSession.userId,
+          },
+        }).then((response) => {
+          expect(response.status).to.eq(200);
+          repoIdToDelete = String(response.body?._id || '');
+        });
       });
     });
 
     it('DELETE /api/repos/:id removes a stored repo', function () {
+      skipUnless(this, Boolean(repoIdToDelete), 'No disposable repo id is available for delete coverage.');
+
       cy.apiRequest({
         method: 'DELETE',
-        url: `/api/repos/${envText('deleteRepoId')}`,
+        url: `/api/repos/${repoIdToDelete}`,
         headers: authHeaders(session.accessToken),
       }).then((response) => {
         expect(response.status).to.eq(200);

@@ -7,7 +7,7 @@
     "backend"
   ],
   "scripts": {
-    "build": "yarn workspace frontend build",
-    "dev": "yarn workspace frontend dev"
+    "dev": "yarn workspace frontend dev",
+    "test:api": "node scripts/run-api-tests.cjs"
   }
 }

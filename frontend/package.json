@@ -4,11 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "cypress:open": "cypress open",
-    "cypress:run": "cypress run",
     "test:api": "cypress run --spec 'cypress/e2e/api-endpoints.cy.ts'"
   },
   "dependencies": {
