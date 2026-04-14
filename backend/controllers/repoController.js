@@ -1,5 +1,7 @@
 const StoredRepo = require('../models/StoredRepo');
 const OAuthAccount = require('../models/OAuthAccount');
+const ReadmeVersion = require('../models/ReadmeVersion');
+const { createReadmeVersionSnapshot } = require('../services/readmeVersioning');
 
 const GITHUB_API_BASE = 'https://api.github.com';
 
@@ -99,11 +101,105 @@ const updateRepoReadme = async (req, res) => {
         repo.Readme = Readme;
         repo.UpdatedAt = new Date();
         await repo.save();
+        await createReadmeVersionSnapshot(repo, {
+            source: 'manual-save'
+        });
 
         res.status(200).json({ repo: repo.toObject() });
     } catch (error) {
         console.error('[updateRepoReadme] error:', error.message);
         res.status(500).json({ message: 'Server Error' });
+    }
+};
+
+// -------------------------------------------------------------------------
+// getRepoVersions
+// GET /api/repos/:id/versions
+// Returns saved README snapshots for a repo owned by the authenticated user.
+// -------------------------------------------------------------------------
+const getRepoVersions = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { id } = req.params;
+
+        const repo = await StoredRepo.findOne({ _id: id, UserId: userId }).lean();
+        if (!repo) {
+            return res.status(404).json({ message: 'Repo not found' });
+        }
+
+        const versions = await ReadmeVersion.find({ StoredRepoId: id, UserId: userId })
+            .sort({ VersionNumber: -1 })
+            .lean();
+
+        return res.status(200).json({
+            versions: versions.map((version) => ({
+                _id: version._id,
+                versionNumber: version.VersionNumber,
+                source: version.Source,
+                sha: version.Sha || '',
+                baseSha: version.BaseSha || '',
+                branch: version.Branch || '',
+                createdAt: version.CreatedAt,
+                preview: String(version.Readme || '').slice(0, 220),
+                metadata: version.Metadata || {},
+            }))
+        });
+    } catch (error) {
+        console.error('[getRepoVersions] error:', error.message);
+        return res.status(500).json({ message: 'Server Error' });
+    }
+};
+
+// -------------------------------------------------------------------------
+// restoreRepoVersion
+// POST /api/repos/:id/versions/:versionId/restore
+// Restores a stored snapshot into the active README and records the restore.
+// -------------------------------------------------------------------------
+const restoreRepoVersion = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { id, versionId } = req.params;
+
+        const repo = await StoredRepo.findOne({ _id: id, UserId: userId });
+        if (!repo) {
+            return res.status(404).json({ message: 'Repo not found' });
+        }
+
+        const version = await ReadmeVersion.findOne({
+            _id: versionId,
+            StoredRepoId: id,
+            UserId: userId
+        });
+
+        if (!version) {
+            return res.status(404).json({ message: 'Version not found' });
+        }
+
+        repo.Readme = version.Readme;
+        repo.UpdatedAt = new Date();
+        repo.Metadata = {
+            ...(repo.Metadata || {}),
+            restoredFromVersionId: String(version._id),
+            restoredFromVersionNumber: version.VersionNumber,
+            restoredAt: new Date(),
+        };
+        await repo.save();
+
+        await createReadmeVersionSnapshot(repo, {
+            source: 'restore',
+            metadata: {
+                restoredFromVersionId: String(version._id),
+                restoredFromVersionNumber: version.VersionNumber,
+            }
+        });
+
+        return res.status(200).json({
+            message: `Restored version v${version.VersionNumber}`,
+            repo: repo.toObject()
+        });
+    } catch (error) {
+        console.error('[restoreRepoVersion] error:', error.message);
+        return res.status(500).json({ message: 'Server Error' });
     }
 };
 
@@ -253,4 +349,11 @@ const createReadmePullRequest = async (req, res) => {
     }
 };
 
-module.exports = { getUserRepos, deleteRepo, updateRepoReadme, createReadmePullRequest };
+module.exports = {
+    getUserRepos,
+    deleteRepo,
+    updateRepoReadme,
+    createReadmePullRequest,
+    getRepoVersions,
+    restoreRepoVersion
+};

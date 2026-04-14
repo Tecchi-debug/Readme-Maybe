@@ -1,6 +1,7 @@
 const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
 const StoredRepo = require('../models/StoredRepo');
 const analyzeRepo = require('../services/analyzerepo');
+const { createReadmeVersionSnapshot } = require('../services/readmeVersioning');
 
 const lambdaClient = new LambdaClient({ region: 'us-east-2' });
 const FUNCTION_NAME = 'test2';
@@ -26,16 +27,28 @@ async function persistGeneratedReadme({ repoUrl, userId, generatedReadme, lambda
         FullName: analyzedRepo.FullName
     });
 
+    let savedRepo;
     if (existingRepo) {
         analyzedRepo.CreatedAt = existingRepo.CreatedAt;
-        return StoredRepo.findByIdAndUpdate(
+        analyzedRepo.GenerationNumber = (Number(existingRepo.GenerationNumber) || 0) + 1;
+        savedRepo = await StoredRepo.findByIdAndUpdate(
             existingRepo._id,
             { $set: analyzedRepo },
             { new: true, runValidators: true }
         );
+    } else {
+        analyzedRepo.GenerationNumber = 1;
+        savedRepo = await StoredRepo.create(analyzedRepo);
     }
 
-    return StoredRepo.create(analyzedRepo);
+    await createReadmeVersionSnapshot(savedRepo, {
+        source: 'lambda-generation',
+        metadata: {
+            message: lambdaPayload?.message || '',
+        }
+    });
+
+    return savedRepo;
 }
 
 const readmeController = async (req, res) => {

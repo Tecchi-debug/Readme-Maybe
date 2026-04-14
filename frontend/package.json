@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "cypress:open": "cypress open",
+    "cypress:run": "cypress run",
+    "test:api": "cypress run --spec 'cypress/e2e/api-endpoints.cy.ts'"
   },
   "dependencies": {
     "next": "^16.1.6",
@@ -20,6 +23,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "cypress": "^15.13.1",
     "postcss": "^8.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.0.0"

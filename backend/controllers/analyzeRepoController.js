@@ -2,6 +2,7 @@ const analyzeUrl = require('../services/analyzerepo');
 const StoredRepo = require('../models/StoredRepo');
 const { getGithubToken } = require('../services/secretsManager');
 const { generateReadme } = require('../services/readmeGenerator');
+const { createReadmeVersionSnapshot } = require('../services/readmeVersioning');
 
 const saveRepo = require('../services/saveRepo');
 
@@ -120,6 +121,12 @@ const analyzeRepoController = async(req,res) => {
                     mode: regenerationMode,
                 },
             };
+            await createReadmeVersionSnapshot(touched, {
+                source: regenerationMode,
+                metadata: {
+                    compareSummary,
+                }
+            });
             return res.status(200).json(touched);
         }
 
@@ -135,6 +142,13 @@ const analyzeRepoController = async(req,res) => {
         } else {
             savedRepo = await StoredRepo.create(result);
         }
+
+        await createReadmeVersionSnapshot(savedRepo, {
+            source: regenerationMode,
+            metadata: {
+                compareSummary,
+            }
+        });
 
         return res.status(200).json({
             ...savedRepo.toObject(),

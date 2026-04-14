@@ -27,6 +27,8 @@ type StoredRepo = {
   FullName: string;
   RemoteUrl: string;
   Readme: string;
+  DefaultBranch?: string;
+  ReadmePath?: string;
   GenerationNumber?: number;
   Sha?: string;
   regenerationMode?: string;
@@ -35,6 +37,26 @@ type StoredRepo = {
     languages?: string[];
     language?: string;
     description?: string;
+    generatedBy?: string;
+    generatedAt?: string;
+    selectedFiles?: string[];
+    restoredFromVersionId?: string;
+    restoredFromVersionNumber?: number;
+    restoredAt?: string;
+    generation?: {
+      mode?: string;
+      number?: number;
+      baseSha?: string | null;
+      latestSha?: string | null;
+      generatedAt?: string;
+      compareSummary?: {
+        status?: string;
+        aheadBy?: number;
+        behindBy?: number;
+        totalCommits?: number;
+        changedFiles?: number;
+      } | null;
+    };
     lastPullRequestUrl?: string;
     lastPullRequestNumber?: number | null;
     lastPullRequestBranch?: string;
@@ -43,6 +65,23 @@ type StoredRepo = {
   };
   UpdatedAt: string;
   CreatedAt: string;
+};
+
+type ReadmeVersion = {
+  _id: string;
+  versionNumber: number;
+  source: string;
+  sha: string;
+  baseSha: string;
+  branch: string;
+  createdAt: string;
+  preview: string;
+  metadata?: {
+    generatedBy?: string;
+    generatedAt?: string;
+    selectedFiles?: string[];
+    restoredFromVersionNumber?: number;
+  };
 };
 
 // -------------------------------------------------------------------------
@@ -214,6 +253,9 @@ export default function MyReadmes() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [creatingPrId, setCreatingPrId] = useState<string | null>(null);
+  const [versions, setVersions] = useState<ReadmeVersion[]>([]);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
 
   // --- search ---
   const [search, setSearch] = useState("");
@@ -237,6 +279,7 @@ export default function MyReadmes() {
       setSaveMessage("");
     } else {
       setDraftReadme("");
+      setVersions([]);
     }
   }, [viewingRepo?._id]);
 
@@ -271,6 +314,26 @@ export default function MyReadmes() {
     }
   }
 
+  async function fetchVersions(repoId: string, token: string): Promise<void> {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
+    setIsLoadingVersions(true);
+    try {
+      const res = await fetch(`${baseUrl}/api/repos/${repoId}/versions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setVersions([]);
+        return;
+      }
+      setVersions(Array.isArray(data?.versions) ? data.versions : []);
+    } catch {
+      setVersions([]);
+    } finally {
+      setIsLoadingVersions(false);
+    }
+  }
+
   // on mount: set user info and load repos
   useEffect(() => {
     const userData = getStoredUserData();
@@ -297,6 +360,14 @@ export default function MyReadmes() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    const userData = getStoredUserData();
+    if (!viewingRepo?._id || !userData?.token || !process.env.NEXT_PUBLIC_API_URL) {
+      return;
+    }
+    void fetchVersions(viewingRepo._id, userData.token);
+  }, [viewingRepo?._id]);
 
   // DELETE /api/repos/:id, removes from state, closes viewer if open
   async function handleDelete(repoId: string): Promise<void> {
@@ -358,6 +429,7 @@ export default function MyReadmes() {
 
       setRepos((prev) => prev.map((r) => r._id === data._id ? data : r));
       if (viewingRepo?._id === data._id) setViewingRepo(data);
+      await fetchVersions(data._id, userData.token);
       const version = Number(data?.GenerationNumber || 0);
       setActionMessage(
         `Regenerated ${repo.Name}${version > 0 ? ` to v${version}` : ""} successfully.`
@@ -416,6 +488,49 @@ export default function MyReadmes() {
     }
   }
 
+  async function handleRestoreVersion(version: ReadmeVersion): Promise<void> {
+    if (!viewingRepo) return;
+
+    const userData = getStoredUserData();
+    if (!userData?.token) {
+      setActionMessage("Please sign in before restoring a version.");
+      return;
+    }
+
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setActionMessage("API URL is not configured.");
+      return;
+    }
+
+    setRestoringVersionId(version._id);
+    setActionMessage("");
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/repos/${viewingRepo._id}/versions/${version._id}/restore`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userData.token}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionMessage(data?.message || `Failed to restore version v${version.versionNumber}.`);
+        return;
+      }
+
+      const updated: StoredRepo = data.repo;
+      setRepos((prev) => prev.map((repo) => (repo._id === updated._id ? updated : repo)));
+      setViewingRepo(updated);
+      setDraftReadme(updated.Readme || "");
+      setActionMessage(data?.message || `Restored version v${version.versionNumber}.`);
+      await fetchVersions(updated._id, userData.token);
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : `Failed to restore version v${version.versionNumber}.`);
+    } finally {
+      setRestoringVersionId(null);
+    }
+  }
+
   // PUT /api/repos/:id/readme - persists the draft markdown
   async function handleSaveReadme(): Promise<void> {
     if (!viewingRepo) return;
@@ -447,6 +562,7 @@ export default function MyReadmes() {
       // reflect in list + viewer
       setRepos((prev) => prev.map((r) => (r._id === updated._id ? updated : r)));
       setViewingRepo(updated);
+      await fetchVersions(updated._id, userData.token);
       setSaveMessage("Saved.");
     } catch (err) {
       setSaveMessage(err instanceof Error ? err.message : "Failed to save README.");
@@ -791,6 +907,116 @@ export default function MyReadmes() {
                 >
                   Close
                 </button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 border-b border-[#252240] bg-[#151225] px-6 py-4 lg:grid-cols-[0.95fr_1.05fr] flex-shrink-0">
+              <div className="rounded-[16px] border border-[#302a54] bg-[#131021] p-4">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-[#7f77dd]">Repo health</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-[#5c5686]">Visibility</p>
+                    <p className="mt-1 text-[12px] text-[#eeedfe]">{viewingRepo.IsPrivate ? "Private" : "Public"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-[#5c5686]">Default branch</p>
+                    <p className="mt-1 text-[12px] text-[#eeedfe]">{viewingRepo.DefaultBranch || "main"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-[#5c5686]">Primary language</p>
+                    <p className="mt-1 text-[12px] text-[#eeedfe]">{viewingRepo.Metadata?.language || "Unknown"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-[#5c5686]">README source</p>
+                    <p className="mt-1 text-[12px] text-[#eeedfe]">
+                      {viewingRepo.ReadmePath === "AI_GENERATED"
+                        ? "AI generated"
+                        : viewingRepo.ReadmePath || "Repository README"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-[#5c5686]">Selected files</p>
+                    <p className="mt-1 text-[12px] text-[#eeedfe]">
+                      {Array.isArray(viewingRepo.Metadata?.selectedFiles) ? viewingRepo.Metadata.selectedFiles.length : 0}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-[#5c5686]">Generation mode</p>
+                    <p className="mt-1 text-[12px] text-[#eeedfe]">
+                      {viewingRepo.Metadata?.generation?.mode || viewingRepo.Metadata?.generatedBy || "manual"}
+                    </p>
+                  </div>
+                </div>
+                {!!viewingRepo.Metadata?.languages?.length && (
+                  <div className="mt-4 flex flex-wrap gap-1.5">
+                    {viewingRepo.Metadata.languages.slice(0, 6).map((language) => (
+                      <span key={language} className="rounded-full border border-[#3c3489] bg-[#201c35] px-2 py-1 text-[10px] text-[#afa9ec]">
+                        {language}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {viewingRepo.Metadata?.generation?.compareSummary && (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-[12px] border border-[#2b2547] bg-[#18152a] px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-[0.14em] text-[#5c5686]">Changed files</p>
+                      <p className="mt-1 text-[12px] text-[#eeedfe]">{viewingRepo.Metadata.generation.compareSummary.changedFiles || 0}</p>
+                    </div>
+                    <div className="rounded-[12px] border border-[#2b2547] bg-[#18152a] px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-[0.14em] text-[#5c5686]">Compared commits</p>
+                      <p className="mt-1 text-[12px] text-[#eeedfe]">{viewingRepo.Metadata.generation.compareSummary.totalCommits || 0}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[16px] border border-[#302a54] bg-[#131021] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-[#7f77dd]">Version history</p>
+                    <p className="mt-1 text-[11px] text-[#afa9ec]">Restore an older README snapshot or inspect generation lineage.</p>
+                  </div>
+                  <span className="rounded-full border border-[#2f2952] bg-[#171328] px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-[#afa9ec]">
+                    {versions.length} saved
+                  </span>
+                </div>
+
+                <div className="mt-4 max-h-[200px] space-y-2 overflow-y-auto pr-1">
+                  {isLoadingVersions && (
+                    <div className="text-[12px] text-[#7f77dd]">Loading versions…</div>
+                  )}
+                  {!isLoadingVersions && versions.length === 0 && (
+                    <div className="text-[12px] text-[#7f77dd]">No saved versions yet.</div>
+                  )}
+                  {!isLoadingVersions && versions.map((version) => {
+                    const isCurrentVersion = version.preview.trim() === String(viewingRepo.Readme || "").trim().slice(0, 220)
+                      && version.sha === (viewingRepo.Sha || "");
+                    return (
+                      <div key={version._id} className="rounded-[14px] border border-[#2b2547] bg-[#18152a] px-3 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[12px] font-medium text-[#eeedfe]">
+                              v{version.versionNumber} · {version.source.replace(/-/g, " ")}
+                            </p>
+                            <p className="mt-1 text-[10px] text-[#7f77dd]">
+                              {new Date(version.createdAt).toLocaleString()} {version.sha ? `· ${version.sha.slice(0, 7)}` : ""}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleRestoreVersion(version)}
+                            disabled={restoringVersionId === version._id || isCurrentVersion}
+                            className="rounded-[10px] border border-[#3c3489] bg-[#252240] px-3 py-1.5 text-[10px] text-[#eeedfe] transition hover:border-[#7f77dd] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {restoringVersionId === version._id ? "Restoring…" : isCurrentVersion ? "Current" : "Restore"}
+                          </button>
+                        </div>
+                        {version.preview && (
+                          <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-[#afa9ec]">{version.preview}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
