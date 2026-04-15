@@ -325,11 +325,9 @@ const register = async (req, res) => {
             <a href="${url}">Verify Email</a>
             `
         );
-        
-        const { accessToken, refreshToken } = await createSessionForUser(newUser._id.toString(), req);
 
-        //return on success
-        res.status(201).json({jwtToken: accessToken, refreshToken, user: newUser, message:'User registered. Please check email to verify your account.'});
+        // Return on success. DON'T create a session until email is verified
+        res.status(201).json({message:'Registration successful! Please check your email to verify your account before logging in.'});
     }catch(error){
         console.error(error);
         res.status(500).json({message: 'Server Error'});
