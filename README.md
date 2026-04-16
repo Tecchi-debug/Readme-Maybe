@@ -1,23 +1,24 @@
 # ReadMeMaybe
 
-ReadMeMaybe is a full-stack MERN application that helps developers generate better repository documentation from a GitHub URL. The app analyzes a repository, pulls relevant metadata and important files through the GitHub API, and stores repository snapshots for each signed-in user.
+A full-stack MERN application that analyzes GitHub repositories and generates documentation, with JWT auth, MongoDB storage, and a Next.js frontend.
 
 ## What It Does
 
-- Authenticates users with JWT-based sessions
-- Accepts a GitHub repository URL from the dashboard
-- Fetches repository metadata, languages, README content, and tree structure
+- Authenticates users with JWT-based access and refresh tokens with persisted sessions
+- Accepts a GitHub repository URL from the dashboard and triggers analysis via `POST /analyze`
+- Fetches repository metadata, languages, README content, and tree structure through the GitHub API
 - Stores analyzed repository data per user in MongoDB
-- Provides a frontend flow for signing in, creating an account, and submitting repositories
+- Provides a frontend flow for signing in, creating an account, submitting repositories, and viewing stored READMEs
 
 ## Tech Stack
 
-- Frontend: Next.js, React, TypeScript, Tailwind CSS
-- Backend: Node.js, Express
-- Database: MongoDB with Mongoose
-- Auth: JWT access/refresh tokens with persisted sessions
-- Package management: Yarn 4 workspaces
-- Infrastructure target: AWS Amplify for frontend, EC2 for backend
+- **Frontend:** Next.js, React, TypeScript, Tailwind CSS, `react-markdown`, `remark-gfm`
+- **Backend:** Node.js, Express
+- **Database:** MongoDB with Mongoose
+- **Auth:** JWT (`jsonwebtoken`), `bcryptjs`
+- **AWS:** `@aws-sdk/client-secrets-manager`, `@aws-sdk/client-lambda`
+- **Email:** `nodemailer`
+- **Package management:** Yarn 4 workspaces
 
 ## Project Structure
 
@@ -34,7 +35,6 @@ ReadMeMaybe is a full-stack MERN application that helps developers generate bett
 │   ├── app/
 │   ├── public/
 │   └── package.json
-├── .yarn/
 ├── package.json
 └── yarn.lock
 ```
@@ -61,11 +61,16 @@ ReadMeMaybe is a full-stack MERN application that helps developers generate bett
 
 - `POST /analyze`
 
+### Health
+
+- `GET /healthz` — liveness check
+- `GET /readyz` — readiness check (MongoDB + secrets)
+
 ## Environment Variables
 
 ### Backend
 
-Create `backend/.env` with the values your environment needs:
+Create `backend/.env`:
 
 ```env
 PORT=5000
@@ -74,10 +79,7 @@ MONGODB_URI=your_mongodb_connection_string
 GITHUB_TOKEN=optional_github_token
 ```
 
-Notes:
-
-- The backend can also read MongoDB credentials from AWS Secrets Manager.
-- If `GITHUB_TOKEN` is set, GitHub API requests get higher rate limits.
+The backend can also read `MONGODB_URI`, `JWT_SECRET`, and email credentials from AWS Secrets Manager. If `GITHUB_TOKEN` is set, GitHub API requests receive higher rate limits.
 
 ### Frontend
 
@@ -88,8 +90,6 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:5000
 ```
 
 ## Local Development
-
-Use Yarn from the repository root.
 
 ### 1. Install dependencies
 
@@ -106,16 +106,14 @@ node server.js
 
 ### 3. Start the frontend
 
-In a separate terminal:
-
 ```bash
 cd frontend
 yarn dev
 ```
 
-Frontend runs on `http://localhost:3000` by default. The backend runs on `http://127.0.0.1:5000` unless overridden.
+The frontend runs on `http://localhost:3000` by default. The backend listens on `http://127.0.0.1:5000` unless overridden.
 
-## Current Auth Flow
+## Auth Flow
 
 - Register creates the user and immediately signs them in
 - Login returns an access token and refresh token
@@ -124,10 +122,9 @@ Frontend runs on `http://localhost:3000` by default. The backend runs on `http:/
 
 ## Deployment Notes
 
-- Frontend is intended for AWS Amplify
-- Backend is intended for AWS EC2 with PM2 or a similar process manager
+- Frontend is configured for static export (`output: 'export'` in `next.config.ts`), targeting AWS Amplify
+- Backend is intended for AWS EC2 with a process manager such as PM2
 - MongoDB Atlas network access must allow the machine running the backend
-- Dev and production environments must set the correct `NEXT_PUBLIC_API_URL`
 
 ## Known Considerations
 
